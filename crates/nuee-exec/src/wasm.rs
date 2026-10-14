@@ -4,11 +4,13 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use nuee_proto::limits::MAX_WASM_MEMORY;
 use nuee_proto::{FailKind, Hash, ModuleInfo, WASM_FEATURES, validate_module};
-use wasmtime::{Config, Engine, Instance, Module, ResourceLimiter, Store, Trap, WasmFeatures};
+use wasmtime::{
+    Config, Engine, Instance, Module, ResourceLimiter, Store, Trap, UpdateDeadline, WasmFeatures,
+};
 
 /// Most table elements a task may grow its tables to.
 const MAX_TABLE_ELEMENTS: usize = 100_000;
@@ -23,7 +25,8 @@ pub struct RunnerConfig {
     pub max_wasm_stack: usize,
     /// Most compiled modules kept in memory.
     pub cache_modules: usize,
-    /// Period of the epoch ticker, in milliseconds.
+    /// Period of the epoch ticker, in milliseconds: how often a running task checks its
+    /// wall-clock deadline.
     pub epoch_tick_ms: u64,
 }
 
@@ -197,6 +200,7 @@ impl WasmRunner {
         input: &[u8],
         limits: &RunLimits,
     ) -> Result<Vec<u8>, ExecError> {
+        let started = Instant::now();
         let (module, info) = {
             let cache = self.lock();
             let c = cache.map.get(module).ok_or_else(|| {
@@ -222,10 +226,18 @@ impl WasmRunner {
             },
         );
         store.limiter(|l| l);
-        let tick = u128::from(self.cfg.epoch_tick_ms);
-        let ticks = limits.deadline.as_millis().div_ceil(tick).max(1);
-        store.set_epoch_deadline(u64::try_from(ticks).unwrap_or(u64::MAX));
-        store.epoch_deadline_trap();
+        // Ticks only say when to look at the clock: counting them would let every late wakeup
+        // of the ticker thread stretch the deadline. The task stops on the first tick at or
+        // after its wall-clock deadline, never before.
+        let deadline = limits.deadline;
+        store.set_epoch_deadline(1);
+        store.epoch_deadline_callback(move |_| {
+            if started.elapsed() >= deadline {
+                Ok(UpdateDeadline::Interrupt)
+            } else {
+                Ok(UpdateDeadline::Continue(1))
+            }
+        });
 
         let result = call(&mut store, &module, input, limits);
         result.map_err(|e| match e {

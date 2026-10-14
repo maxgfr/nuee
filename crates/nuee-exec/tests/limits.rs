@@ -1,5 +1,8 @@
 //! Hostile and broken modules must fail with the right classification, never hang.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use nuee_exec::{ExecError, RunLimits, RunnerConfig, WasmRunner};
@@ -63,21 +66,63 @@ fn echo_returns_input() {
 fn infinite_loop_times_out() {
     let m = task(16, "", "(loop br 0) unreachable");
     let deadline = Duration::from_millis(200);
+    let r = runner();
+    assert_timeout_within(&r, &m, deadline);
+}
+
+/// Runs a prepared copy of `module` under `deadline` and checks it is stopped as a timeout,
+/// not before the deadline and not long after. Only the run is timed, not the compilation.
+fn assert_timeout_within(r: &WasmRunner, module: &[u8], deadline: Duration) {
+    let info = r.prepare(module).expect("prepare");
     let start = Instant::now();
-    let kind = fail_kind(
-        &m,
+    let res = r.run(
+        &info.hash,
+        b"hello",
         &RunLimits {
             deadline,
             ..limits()
         },
     );
     let took = start.elapsed();
+    let kind = match res {
+        Ok(out) => panic!("expected a failure, got {} output bytes", out.len()),
+        Err(e) => e.kind,
+    };
     assert_eq!(kind, FailKind::Timeout);
     assert!(took >= deadline, "stopped early: {took:?}");
     assert!(
         took < deadline * 2 + Duration::from_millis(100),
         "too slow: {took:?}"
     );
+}
+
+#[test]
+fn deadline_is_wall_clock_with_coarse_ticks() {
+    // A tick half the deadline: counting two ticks stops the task wherever the ticker's phase
+    // puts the second one, often before the deadline. Reading the clock never stops it early.
+    let r = WasmRunner::new(RunnerConfig {
+        epoch_tick_ms: 100,
+        ..RunnerConfig::default()
+    })
+    .expect("runner");
+    let m = task(16, "", "(loop br 0) unreachable");
+    for _ in 0..3 {
+        assert_timeout_within(&r, &m, Duration::from_millis(200));
+    }
+}
+
+#[test]
+fn deadline_is_wall_clock_with_late_ticks() {
+    // Busy threads on every core delay the 1 ms ticker's wakeups; a deadline counted in ticks
+    // drifts by the sum of those delays, one read from the clock by a single delay at most.
+    let r = WasmRunner::new(RunnerConfig {
+        epoch_tick_ms: 1,
+        ..RunnerConfig::default()
+    })
+    .expect("runner");
+    let m = task(16, "", "(loop br 0) unreachable");
+    let _hogs = Hogs::spawn(thread::available_parallelism().map_or(4, usize::from) * 2);
+    assert_timeout_within(&r, &m, Duration::from_millis(200));
 }
 
 #[test]
@@ -249,4 +294,38 @@ fn async_run_works() {
         .block_on(r.run_async(info.hash, b"async".to_vec(), limits()))
         .expect("run");
     assert_eq!(out, b"async");
+}
+
+/// Busy-spinning threads, stopped and joined on drop (also when an assertion fails).
+struct Hogs {
+    stop: Arc<AtomicBool>,
+    threads: Vec<thread::JoinHandle<()>>,
+}
+
+impl Hogs {
+    fn spawn(n: usize) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let threads = (0..n)
+            .map(|_| {
+                let stop = Arc::clone(&stop);
+                thread::spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        std::hint::spin_loop();
+                    }
+                })
+            })
+            .collect();
+        Self { stop, threads }
+    }
+}
+
+impl Drop for Hogs {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        for h in self.threads.drain(..) {
+            if h.join().is_err() && !thread::panicking() {
+                panic!("hog thread panicked");
+            }
+        }
+    }
 }

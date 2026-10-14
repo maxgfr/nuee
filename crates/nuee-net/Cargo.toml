@@ -1,0 +1,38 @@
+[package]
+name = "nuee-net"
+description = "iroh network driver for Nuée swarms"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+nuee-proto = { workspace = true }
+nuee-core = { workspace = true }
+iroh-base = { workspace = true, features = ["key"] }
+n0-future = { workspace = true }
+n0-watcher = { workspace = true }
+bytes = { workspace = true }
+futures-util = { workspace = true, features = ["std"] }
+futures-lite = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+postcard = { workspace = true, features = ["alloc"] }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+iroh = { workspace = true, features = ["tls-ring", "metrics", "portmapper", "fast-apple-datapath"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+iroh = { workspace = true, features = ["tls-ring"] }
+tokio = { workspace = true, features = ["sync"] }
+
+[lints]
+workspace = true

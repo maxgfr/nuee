@@ -1,0 +1,29 @@
+[package]
+name = "nuee-exec"
+description = "Sandboxed WebAssembly and opt-in native task execution for Nuée"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+nuee-proto = { workspace = true }
+wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
+blake3 = { workspace = true }
+tokio = { workspace = true, features = ["process", "time", "io-util", "rt", "macros"] }
+nix = { workspace = true, features = ["signal", "process"] }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+nuee-train = { workspace = true }
+wat = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

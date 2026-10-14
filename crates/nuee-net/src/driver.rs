@@ -1296,8 +1296,6 @@ pub enum JoinError {
 /// What a worker reports to its host.
 #[derive(Debug, Clone)]
 pub enum WorkerHostEvent {
-    /// Waiting for the operator to approve us.
-    Pending,
     /// Admitted.
     Welcomed,
     /// Core event (leases, results, progress).
@@ -1332,7 +1330,7 @@ enum WorkerIn {
 #[derive(Debug)]
 pub struct WorkerHandle {
     tx: mpsc::UnboundedSender<WorkerIn>,
-    /// Pending/welcome, core events, and how the session ended.
+    /// Welcome, core events, and how the session ended (pending goes to `join_with`).
     pub events: mpsc::UnboundedReceiver<WorkerHostEvent>,
 }
 
@@ -1400,6 +1398,20 @@ pub async fn join(
     exec: Arc<dyn TaskExec>,
     blobs: Arc<dyn BlobHub>,
 ) -> Result<WorkerHandle, JoinError> {
+    join_with(net, link, cfg, exec, blobs, || {}).await
+}
+
+/// [`join`], calling `on_pending` as soon as the coordinator says the operator has to approve
+/// this worker: the wait can last, and the person behind the worker should know why.
+pub async fn join_with(
+    net: &Net,
+    link: &JobLink,
+    cfg: WorkerConfig,
+    exec: Arc<dyn TaskExec>,
+    blobs: Arc<dyn BlobHub>,
+    on_pending: impl FnOnce(),
+) -> Result<WorkerHandle, JoinError> {
+    let mut on_pending = Some(on_pending);
     let coord = link.coordinator;
     if let Some(url) = relay_url(link.relay.as_str()) {
         net.add_peer(coord, Some(url), Vec::new());
@@ -1447,8 +1459,8 @@ pub async fn join(
         };
         match msg {
             Msg::Pending => {
-                if ev_tx.send(WorkerHostEvent::Pending).is_err() {
-                    tracing::trace!("host dropped the event receiver");
+                if let Some(f) = on_pending.take() {
+                    f();
                 }
             }
             Msg::Bye { reason } => {

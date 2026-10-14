@@ -274,7 +274,9 @@ export function render({ app, root, route }) {
     };
 
     const unsubscribe = app.bridge.onEvent((event, s) => {
-      if (session === null) early.push({ event, s });
+      // The join only resolves once the presenter approved this device: the wait shows now.
+      if (session === null && event.type === 'pending') onEvent(event);
+      else if (session === null) early.push({ event, s });
       else if (s === session) onEvent(event);
     });
     active = true;

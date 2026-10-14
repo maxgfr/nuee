@@ -20,5 +20,5 @@ pub mod driver;
 
 pub use driver::{
     BlobError, BlobHub, CoordinatorDriver, CoordinatorHandle, DriverConfig, HostEvent, JoinError,
-    LaneInError, MemBlobHub, TaskExec, WorkerHandle, WorkerHostEvent, join,
+    LaneInError, MemBlobHub, TaskExec, WorkerHandle, WorkerHostEvent, join, join_with,
 };

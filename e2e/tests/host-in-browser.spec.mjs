@@ -44,6 +44,9 @@ test('a page coordinates a job for a CLI worker and a Firefox tab', async () => 
   const tab = await h.page(await h.browser('firefox'), 'firefox');
   await tab.goto(pageUrl(link));
   await tab.getByRole('button', { name: 'Contribute' }).click();
+  // Both are told that they wait for the presenter, while they wait.
+  await worker.event('pending', 60_000);
+  await expect(tab.locator('.contributing .state')).toHaveText('Waiting for the presenter to approve this device.', { timeout: 60_000 });
   // Once both asked to join, the page lets them in together.
   const accept = host.locator('ul.pending').getByRole('button', { name: 'Accept' });
   await expect(accept).toHaveCount(2, { timeout: 60_000 });

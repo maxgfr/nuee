@@ -630,8 +630,6 @@ fn worker_event(sink: &Sink, ev: WorkerEvent) {
 async fn pump_worker(mut rx: mpsc::UnboundedReceiver<WorkerHostEvent>, sink: Sink) {
     while let Some(ev) = rx.recv().await {
         match ev {
-            // The pending state before the welcome arrives through `join` itself.
-            WorkerHostEvent::Pending => sink.event("pending", Obj::new()),
             // Details follow in `WorkerEvent::Welcomed`.
             WorkerHostEvent::Welcomed => {}
             WorkerHostEvent::Event(e) => worker_event(&sink, e),
@@ -1320,7 +1318,10 @@ async fn join(
         limits.max_memory = limits.max_memory.min(u64::from(mb) * 1024 * 1024);
     }
     let cfg = WorkerConfig { caps, limits };
-    let mut handle = nuee_net::join(&node.net, &job_link, cfg, exec, Arc::new(node.hub.clone()))
+    // The page shows the wait for approval while it lasts, not once it is over.
+    let pending = || sink.event("pending", Obj::new());
+    let blobs = Arc::new(node.hub.clone());
+    let mut handle = nuee_net::join_with(&node.net, &job_link, cfg, exec, blobs, pending)
         .await
         .map_err(|e| match e {
             JoinError::Refused(_) => WebError::new(code::ADMISSION_REFUSED, e.to_string()),

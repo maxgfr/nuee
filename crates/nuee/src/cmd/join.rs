@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use nuee_core::{WorkerConfig, WorkerEvent};
-use nuee_net::{JoinError, NetError, WorkerHostEvent, join};
+use nuee_net::{JoinError, NetError, WorkerHostEvent, join_with};
 use nuee_proto::{
     BoundedString, BoundedVec, ByeReason, Caps, Link, LocalLimits, Manifest, TaskKind,
 };
@@ -404,7 +404,14 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             caps,
             limits: LocalLimits::default(),
         };
-        let mut handle = match join(&net, &link, cfg, exec, Arc::new(hub.clone())).await {
+        // Told while it waits, not once approved: the wait can last.
+        let pending = || {
+            ctx.ui.emit("pending", json!({}));
+            ctx.ui
+                .note("waiting for the coordinator to approve this peer");
+        };
+        let joined = join_with(&net, &link, cfg, exec, Arc::new(hub.clone()), pending).await;
+        let mut handle = match joined {
             Ok(h) => h,
             Err(e) => {
                 if let Err(err) = router.shutdown().await {
@@ -452,10 +459,6 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                         break Some(Err(fail(exit::ENDED, "the connection to the coordinator ended")));
                     };
                     match ev {
-                        WorkerHostEvent::Pending => {
-                            ctx.ui.emit("pending", json!({}));
-                            ctx.ui.note("waiting for the coordinator to approve this peer");
-                        }
                         WorkerHostEvent::Welcomed => {
                             ctx.ui.emit("welcome", json!({ "slots": slots }));
                             ctx.ui.note(&format!("joined with {slots} slots"));

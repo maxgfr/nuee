@@ -8,7 +8,7 @@ use bytes::Bytes;
 use nuee_core::{CoordinatorConfig, Event, JobSpec, Outcome, WorkerConfig};
 use nuee_net::driver::{
     BoxFut, CoordinatorDriver, CoordinatorHandle, DriverConfig, HostEvent, JoinError, MemBlobHub,
-    TaskExec, close_code, close_code_of, join,
+    TaskExec, close_code, close_code_of, join, join_with,
 };
 use nuee_net::{AdmitConfig, Net, NetConfig, RelayChoice};
 use nuee_proto::{
@@ -628,6 +628,45 @@ async fn refused_peer_never_reads_blobs() {
         .expect("join task");
     assert!(matches!(res, Err(JoinError::Refused(_))), "{res:?}");
     assert!(!swarm.blobs.is_admitted(&id));
+}
+
+/// A worker waiting for approval is told so while it waits, not once it is in.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_pending_worker_is_told_before_its_approval() {
+    let mut swarm = approving_coordinator().await;
+    let net = worker_net(18, &swarm).await;
+    let id = net.id();
+    let (told, mut pending) = tokio::sync::oneshot::channel();
+    let joining = {
+        let net = net.clone();
+        let link = link(&swarm, SECRET);
+        tokio::spawn(async move {
+            join_with(
+                &net,
+                &link,
+                worker_cfg(),
+                Arc::new(Reverse),
+                Arc::new(MemBlobHub::new()),
+                move || {
+                    let _ = told.send(());
+                },
+            )
+            .await
+        })
+    };
+    wait_pending(&mut swarm.handle, id).await;
+    timeout(Duration::from_secs(10), &mut pending)
+        .await
+        .expect("told while still pending")
+        .expect("pending reported");
+    swarm.handle.approve(id, true).expect("approve");
+    let _worker = timeout(Duration::from_secs(10), joining)
+        .await
+        .expect("welcome in time")
+        .expect("join task")
+        .expect("join");
+    swarm.handle.shutdown().await.expect("shutdown");
+    swarm.router.shutdown().await.expect("router shutdown");
 }
 
 /// A worker announcing a relay on a private address: the coordinator must not record it.

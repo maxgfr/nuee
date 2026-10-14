@@ -23,6 +23,8 @@ jobs:
         # page in. The release still builds the arm64 binary on macos-14.
         os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
+    # Far below the 6-hour job limit; the e2e suite stops itself after 45 minutes.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Nightly only drives `cargo +nightly fuzz`; rust-toolchain.toml keeps the pinned stable.

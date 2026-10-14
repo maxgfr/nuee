@@ -20,6 +20,8 @@ export default defineConfig({
   reporter: 'list',
   // Job runs take up to 3 minutes; the whole test gets setup time on top.
   timeout: 6 * 60_000,
+  // The suite takes about 10 minutes: a blocked run still stops here and prints its report.
+  globalTimeout: 45 * 60_000,
   expect: { timeout: 3 * 60_000 },
   use: {
     locale: 'en-US',

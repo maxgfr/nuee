@@ -301,7 +301,11 @@ async fn a_released_copy_counts_against_the_quota_until_reclaimed() {
     })
     .await;
     assert!(d.member_hub.present(first).await.expect("status"));
-    assert!(d.member.reclaiming().await.expect("reclaiming") > 0);
+    // The member takes the copy out of its registry before it finishes the release.
+    until("the first copy counted until reclaimed", async || {
+        d.member.reclaiming().await.expect("reclaiming") > 0
+    })
+    .await;
 
     // Its bytes are still on disk: a second copy would go over the quota.
     let (second, _b) = keep_one(&d, 3).await;

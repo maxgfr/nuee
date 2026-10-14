@@ -1,5 +1,7 @@
 // A Chromium page hosts a Mandelbrot job, coordinating only, for a CLI worker and a Firefox
 // tab that both compute; the page sees the job through, verified in full, without a mismatch.
+// The job lasts well under a second, so the page approves both joiners together: neither
+// starts before the other is in.
 import { test, expect } from '@playwright/test';
 import { Harness, pageUrl, services } from './helpers.mjs';
 
@@ -24,6 +26,7 @@ test('a page coordinates a job for a CLI worker and a Firefox tab', async () => 
   await host.locator('#verify').selectOption('full');
   // The page only coordinates: every task is computed by the CLI worker and the Firefox tab.
   await host.locator('#local').uncheck();
+  await host.locator('#approve').check();
   await host.getByRole('button', { name: 'Start' }).click();
 
   const field = host.locator('#share-link');
@@ -41,6 +44,11 @@ test('a page coordinates a job for a CLI worker and a Firefox tab', async () => 
   const tab = await h.page(await h.browser('firefox'), 'firefox');
   await tab.goto(pageUrl(link));
   await tab.getByRole('button', { name: 'Contribute' }).click();
+  // Once both asked to join, the page lets them in together.
+  const accept = host.locator('ul.pending').getByRole('button', { name: 'Accept' });
+  await expect(accept).toHaveCount(2, { timeout: 60_000 });
+  await accept.first().click();
+  await accept.first().click();
   // Focus follows the new state: the contribution's status line.
   await expect(tab.locator('.contributing .state')).toBeFocused({ timeout: 60_000 });
 

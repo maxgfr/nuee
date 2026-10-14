@@ -307,7 +307,7 @@ origin.
   CSP). An end-to-end test checks that the preview reads none of the origin's storage.
   *`web/app/lib/inline.js`, `web/app/views/site.js`.*
 - The anchor gateway sends `Content-Security-Policy: sandbox`, `X-Content-Type-Options:
-  nosniff`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: same-site`,
+  nosniff`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: cross-origin`,
   refuses dot segments and encoded separators, lists no directory and caps sizes.
   `--gateway-scripts` relaxes the CSP to `sandbox allow-scripts allow-forms allow-popups`, never
   `allow-same-origin`. The gateway drops `Set-Cookie` from service responses (and never forwards

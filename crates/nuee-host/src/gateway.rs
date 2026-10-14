@@ -4,8 +4,11 @@
 //! Hosted content is untrusted. Every response carries `Content-Security-Policy: sandbox`
 //! (scripts off, opaque origin; `--gateway-scripts` allows scripts, forms and popups but
 //! never the same origin), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`
-//! and `Cross-Origin-Resource-Policy: same-site`. Paths are decoded once and refused when a
+//! and `Cross-Origin-Resource-Policy: cross-origin`. Paths are decoded once and refused when a
 //! segment is `.`, `..`, empty or holds a separator; directories are never listed.
+//!
+//! The resource policy cannot be `same-site`: a sandboxed page has an opaque origin, which is
+//! same-site with nothing, so browsers would block its own stylesheets, scripts and images.
 
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
@@ -29,6 +32,9 @@ use tokio::sync::Semaphore;
 pub const CSP_SANDBOX: &str = "sandbox";
 /// The policy with `--gateway-scripts`: scripts, forms and popups, still an opaque origin.
 pub const CSP_SCRIPTS: &str = "sandbox allow-scripts allow-forms allow-popups";
+/// The `Cross-Origin-Resource-Policy` value: a sandboxed page (opaque origin) loads its own
+/// subresources as a cross-origin requester, so anything stricter blocks them.
+pub const CORP: &str = "cross-origin";
 /// Most connections served at once.
 pub const MAX_CONNECTIONS: usize = 256;
 /// Total bytes of one site's files.
@@ -357,7 +363,7 @@ impl Gateway {
         );
         h.insert(
             HeaderName::from_static("cross-origin-resource-policy"),
-            HeaderValue::from_static("same-site"),
+            HeaderValue::from_static(CORP),
         );
         resp
     }
@@ -667,7 +673,7 @@ mod tests {
         assert_eq!(header(&r, "content-security-policy"), "sandbox");
         assert_eq!(header(&r, "x-content-type-options"), "nosniff");
         assert_eq!(header(&r, "referrer-policy"), "no-referrer");
-        assert_eq!(header(&r, "cross-origin-resource-policy"), "same-site");
+        assert_eq!(header(&r, "cross-origin-resource-policy"), "cross-origin");
         let r = get(&g, "/s/abc/css/site.css").await;
         assert_eq!(header(&r, "content-type"), "text/css; charset=utf-8");
         let r = get(&g, "/s/abc/docs/").await;
@@ -678,6 +684,38 @@ mod tests {
             header(&r, "content-security-policy"),
             "sandbox allow-scripts allow-forms allow-popups"
         );
+    }
+
+    #[tokio::test]
+    async fn subresources_stay_loadable_by_the_sandboxed_page_itself() {
+        // The page runs in an opaque origin; `same-site` or `same-origin` would make every
+        // browser refuse its own CSS, scripts and images (seen in Chromium, Firefox, WebKit).
+        let g = Gateway::new(GatewayConfig { scripts: false }, None);
+        g.add_site(
+            "abc",
+            vec![
+                (
+                    "index.html".into(),
+                    b"<link rel=stylesheet href=s.css>".to_vec(),
+                ),
+                ("s.css".into(), b"h1{}".to_vec()),
+                ("img/p.png".into(), vec![0x89, b'P', b'N', b'G']),
+            ],
+        )
+        .expect("site");
+        for target in [
+            "/s/abc/",
+            "/s/abc/s.css",
+            "/s/abc/img/p.png",
+            "/s/abc/missing",
+        ] {
+            let r = get(&g, target).await;
+            assert_eq!(
+                header(&r, "cross-origin-resource-policy"),
+                "cross-origin",
+                "{target}"
+            );
+        }
     }
 
     #[tokio::test]

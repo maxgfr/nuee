@@ -34,6 +34,9 @@ $ curl http://localhost:8001/
 
 `--port` is optional (a free port is picked). Each TCP connection to the local port becomes one
 QUIC stream on `nuee/tcp/0`, end to end encrypted, through the relay when no direct path exists.
+The bytes pass untouched: a web app opened on `http://localhost:<port>` gets its own headers,
+cookies (`Set-Cookie` and `Cookie`), form posts and `fetch()` calls as if it ran locally. The
+gateway below is different: it strips cookies.
 
 What `expose` will and will not do:
 
@@ -115,7 +118,7 @@ cache-control: no-cache
 content-security-policy: sandbox
 x-content-type-options: nosniff
 referrer-policy: no-referrer
-cross-origin-resource-policy: same-site
+cross-origin-resource-policy: cross-origin
 ```
 
 In production you would use `--relay-hostname` and `--acme-contact` instead of `--relay-dev`;
@@ -132,7 +135,9 @@ Every gateway response carries `Content-Security-Policy: sandbox`: the browser t
 as an opaque origin and runs no script. With `--gateway-scripts` the policy becomes
 `sandbox allow-scripts allow-forms allow-popups`, still without `allow-same-origin`, for
 dynamic sites you trust: their scripts then run on your gateway's address. Serve the gateway
-on a host name of its own, never on a domain that holds cookies for anything else. The gateway
+on a host name of its own, never on a domain that holds cookies for anything else.
+`Cross-Origin-Resource-Policy` is `cross-origin`: a sandboxed page has an opaque origin, so any
+stricter value would make browsers block the site's own stylesheets, scripts and images. The gateway
 never relays `Set-Cookie` from a service nor forwards `Cookie` to it; it replaces the visitor's
 `Forwarded`, `X-Forwarded-*` and `X-Real-IP` headers with `X-Forwarded-For: <client address>`.
 A request has 10 s to send its head and 30 s more for its body (408 otherwise). Paths with

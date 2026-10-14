@@ -144,7 +144,7 @@ The anchor keeps the ciphertext and serves the files at `/s/<id>/`. A service ex
 
 Hosted content is treated as hostile. Every response carries
 `Content-Security-Policy: sandbox` (no scripts, opaque origin), `X-Content-Type-Options:
-nosniff`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: same-site`;
+nosniff`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: cross-origin`;
 paths with `.`, `..`, empty segments or encoded separators are refused, directories are never
 listed, and sizes are capped (256 MiB per site, 8 MiB request bodies). `--gateway-scripts`
 switches the policy to `sandbox allow-scripts allow-forms allow-popups` for dynamic sites,

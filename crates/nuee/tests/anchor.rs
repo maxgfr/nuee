@@ -381,7 +381,7 @@ fn anchor_keeps_jobs_across_restarts_and_serves_sites() {
     assert_eq!(headers["content-security-policy"], "sandbox");
     assert_eq!(headers["x-content-type-options"], "nosniff");
     assert_eq!(headers["referrer-policy"], "no-referrer");
-    assert_eq!(headers["cross-origin-resource-policy"], "same-site");
+    assert_eq!(headers["cross-origin-resource-policy"], "cross-origin");
     assert_eq!(headers["content-type"], "text/html; charset=utf-8");
     let (status, headers, _) = http_get(&second.gateway, &format!("{path}css/a.css"));
     assert_eq!(status, 200);

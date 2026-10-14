@@ -3,7 +3,7 @@
 use core::fmt;
 use core::str::FromStr;
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
@@ -114,7 +114,7 @@ pub fn new_secret16() -> Result<[u8; 16], RandomError> {
 }
 
 fn proof_mac(label: &[u8], secret: &[u8], a: &EndpointId, b: &EndpointId) -> Hmac<Sha256> {
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(secret)
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret)
         .unwrap_or_else(|_| unreachable!("HMAC accepts keys of any length"));
     mac.update(label);
     mac.update(a.as_bytes());

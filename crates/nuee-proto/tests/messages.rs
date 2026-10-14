@@ -394,3 +394,14 @@ proptest! {
         let _ = decode::<Manifest>(&bytes);
     }
 }
+
+/// Fixed HMAC-SHA256 vector, cross-checked against an independent HMAC implementation.
+#[test]
+fn proof_matches_known_answer() {
+    let p = proof(PROOF_HELLO, &[5u8; 16], &key(1).public(), &key(2).public());
+    let hex: String = p.iter().map(|v| format!("{v:02x}")).collect();
+    assert_eq!(
+        hex,
+        "98321c19b5440b9702418e25eb7494a6a48678824a7d5c09eec681e83f28c0f7"
+    );
+}

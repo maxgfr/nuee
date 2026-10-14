@@ -7,6 +7,22 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      # The RustCrypto crates share the digest traits and must move together, majors included.
+      rustcrypto:
+        patterns:
+          - sha2
+          - sha1
+          - sha3
+          - hmac
+          - hkdf
+          - digest
+          - crypto-common
+          - block-buffer
+          - cipher
+          - aead
+          - signature
+          - universal-hash
+        update-types: [major, minor, patch]
       cargo-minor-patch:
         update-types: [minor, patch]
   - package-ecosystem: npm

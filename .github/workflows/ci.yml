@@ -50,6 +50,17 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
           bwrap --ro-bind / / --unshare-net --unshare-pid --die-with-parent true
+      # ring's build script compiles C for wasm32 and Apple's clang ships no wasm32 backend.
+      - name: Use Homebrew LLVM for the wasm32 C toolchain
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm
+          llvm_prefix=$(brew --prefix llvm)
+          "$llvm_prefix/bin/clang" --target=wasm32-unknown-unknown --print-targets | grep -q wasm32
+          {
+            echo "CC_wasm32_unknown_unknown=$llvm_prefix/bin/clang"
+            echo "AR_wasm32_unknown_unknown=$llvm_prefix/bin/llvm-ar"
+          } >> "$GITHUB_ENV"
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: wasm-bindgen@0.2.128,wasm-pack@0.15.0,cargo-deny@0.20.2,cargo-audit@0.22.2,cargo-fuzz@0.13.2,shellcheck@0.11.0

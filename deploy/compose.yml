@@ -1,0 +1,55 @@
+# Nuée anchor with Docker Compose. Set the public host name and the Let's Encrypt contact
+# in a .env file next to this one (see docs/ANCHOR.md):
+#   NUEE_HOSTNAME=anchor.example.org
+#   NUEE_ACME_CONTACT=ops@example.org
+# then: docker compose -f deploy/compose.yml up -d
+name: nuee
+
+services:
+  anchor:
+    image: ghcr.io/maxgfr/nuee:${NUEE_VERSION:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command:
+      - serve
+      - --anchor
+      - --relay-hostname
+      - ${NUEE_HOSTNAME:?set NUEE_HOSTNAME to the anchor's public host name}
+      - --acme-contact
+      - ${NUEE_ACME_CONTACT:?set NUEE_ACME_CONTACT to a Let's Encrypt contact email}
+      - --store
+      - ${NUEE_STORE:-10GiB}
+      - --gateway
+      - 0.0.0.0:8080
+    environment:
+      NUEE_DATA_DIR: /data
+      NUEE_CONFIG_DIR: /config
+      NUEE_LOG: ${NUEE_LOG:-info}
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "7842:7842/udp"
+      - "8080:8080/tcp"
+    volumes:
+      - nuee-data:/data
+      - nuee-config:/config
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/nuee", "--quiet", "id"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  nuee-data:
+  nuee-config:

@@ -1,0 +1,12 @@
+[package]
+name = "toy-trainer"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+nuee-task = { path = "../nuee-task" }
+

@@ -1,0 +1,78 @@
+[package]
+name = "nuee-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = []
+
+[dependencies]
+libfuzzer-sys = "0.4"
+nuee-proto = { path = "../crates/nuee-proto" }
+nuee-net = { path = "../crates/nuee-net" }
+nuee-train = { path = "../crates/nuee-train" }
+nuee-gpu = { path = "../crates/nuee-gpu", default-features = false }
+# nuee-store pulls iroh-blobs, which the nightly compiler cannot build yet; the erasure header
+# module is compiled from its source file instead (see fuzz_targets/erasure_header.rs).
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[[bin]]
+name = "decode_msg"
+path = "fuzz_targets/decode_msg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_link"
+path = "fuzz_targets/parse_link.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "validate_module"
+path = "fuzz_targets/validate_module.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_job_toml"
+path = "fuzz_targets/parse_job_toml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_frames"
+path = "fuzz_targets/decode_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "delta_codec"
+path = "fuzz_targets/delta_codec.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "erasure_header"
+path = "fuzz_targets/erasure_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_frame"
+path = "fuzz_targets/http_frame.rs"
+test = false
+doc = false
+bench = false

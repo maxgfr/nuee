@@ -1,0 +1,16 @@
+{
+  "name": "nuee-e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end tests of the CLI and the web app on Chromium, Firefox and WebKit",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0"
+  },
+  "overrides": {
+    "playwright-core": "1.63.0"
+  }
+}

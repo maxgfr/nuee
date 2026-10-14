@@ -1,0 +1,47 @@
+[package]
+name = "nuee-store"
+description = "Encrypted file sharing, pinning and replication for Nuée"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+nuee-proto = { workspace = true }
+nuee-net = { workspace = true }
+age = { workspace = true }
+tar = { workspace = true }
+blake3 = { workspace = true }
+bytes = { workspace = true }
+rand = { workspace = true, features = ["std", "std_rng"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+data-encoding = { workspace = true }
+n0-future = { workspace = true }
+reed-solomon-simd = { workspace = true }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+iroh = { workspace = true, features = ["tls-ring", "metrics", "portmapper", "fast-apple-datapath"] }
+iroh-blobs = { workspace = true, features = ["fs-store"] }
+bao-tree = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "sync"] }
+tempfile = { workspace = true }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+iroh = { workspace = true, features = ["tls-ring"] }
+iroh-blobs = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+getrandom02 = { workspace = true, features = ["js"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

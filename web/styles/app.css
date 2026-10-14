@@ -18,7 +18,8 @@ html {
   display: none !important;
 }
 
-/* The area a view belongs to picks its notebook cover (set by each view on mount). */
+/* The area a view belongs to picks its color, shown in the bar under the header (set by each
+   view on mount). */
 :root {
   --cover: var(--cover-slate);
 }
@@ -186,7 +187,7 @@ a:hover {
   stroke-width: 2;
 }
 
-/* Header: the notebook cover of the current area. */
+/* Header: the same ink-navy band on every page, the current area's color in a bar under it. */
 .top {
   display: flex;
   align-items: center;
@@ -194,7 +195,8 @@ a:hover {
   column-gap: var(--space-4);
   min-height: var(--header);
   padding: 0 var(--gutter);
-  background: var(--cover);
+  background: var(--header-bg);
+  border-bottom: 4px solid var(--cover);
   color: var(--on-cover);
 }
 .brand {
@@ -668,20 +670,29 @@ pre {
   padding: var(--space-3) 0 calc(var(--space-3) - 1px);
   border-bottom: 1px solid var(--rule-major);
 }
+.door {
+  --tab: var(--cover-slate);
+  --tab-tint: var(--tint-slate);
+}
 .door-run {
   --tab: var(--cover-blue);
+  --tab-tint: var(--tint-blue);
 }
 .door-join {
   --tab: var(--cover-green);
+  --tab-tint: var(--tint-green);
 }
 .door-share {
   --tab: var(--cover-ochre);
+  --tab-tint: var(--tint-ochre);
 }
 .door-open {
   --tab: var(--cover-teal);
+  --tab-tint: var(--tint-teal);
 }
-/* Each door's title is the label of its notebook cover: paper-white lettering on the cover
-   colour, with the label's thin inner frame, so an area is known by its colour first. */
+/* Each door's title is a label in its area's color: lettering in the color on a light tint of
+   it, so an area is known by its color first without a heavy block. At night the lettering
+   is white on the color itself (tokens.css). */
 .door h3 {
   display: inline-flex;
   align-items: center;
@@ -689,10 +700,8 @@ pre {
   margin: 0 0 var(--space-2);
   padding: 0 var(--space-3);
   border-radius: var(--radius);
-  background: var(--tab, var(--cover-slate));
-  color: var(--on-cover);
-  outline: 1px solid color-mix(in srgb, var(--on-cover) 55%, transparent);
-  outline-offset: -4px;
+  background: var(--tab-tint);
+  color: var(--tab);
   font-size: var(--text-xl);
   line-height: 2rem;
 }
@@ -700,16 +709,25 @@ pre {
   display: inline-flex;
   align-items: center;
   min-height: var(--target);
-  color: var(--on-cover);
+  color: var(--tab);
   text-decoration-thickness: 1px;
 }
 .door h3 a:hover {
-  color: var(--on-cover);
+  color: var(--tab);
   text-decoration-thickness: 2px;
 }
 .door h3 a:focus-visible {
-  outline-color: var(--on-cover);
   outline-offset: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  .door h3,
+  .door h3 a,
+  .door h3 a:hover {
+    color: var(--on-cover);
+  }
+  .door h3 a:focus-visible {
+    outline-color: var(--on-cover);
+  }
 }
 .door p {
   margin: 0;

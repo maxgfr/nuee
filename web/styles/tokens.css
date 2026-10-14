@@ -1,5 +1,7 @@
 /* Design tokens. Every color, size and font of the page comes from here.
-   Light is a Séyès-ruled French notebook; dark is the classroom blackboard. */
+   Light is a Séyès-ruled notebook page; dark is the same page at night, in ink blue.
+   Colors are picked in OKLCH and written in hex: the area family shares one lightness and
+   chroma, so only its hue changes. */
 @font-face {
   font-family: 'Luciole';
   src: url('../fonts/Luciole-Regular.woff2') format('woff2');
@@ -81,34 +83,44 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --transition: 150ms ease-out;
 
-  /* Notebook (light). Text pairs are at least 4.5:1 on the paper, borders at least 3:1. */
-  --paper: #fbfcff;
+  /* Notebook (light). Text pairs are at least 5.5:1 on the paper, borders and focus at least
+     3:1. The ruling stays faint: it is the paper, not the content. */
+  --paper: #fafbfe;
   --field: #ffffff;
-  --rule-minor: #e4e8f7;
-  --rule-major: #c3cbec;
-  --margin-line: #e2546b;
-  --ink: #16213d;
-  --pencil: #4b5468;
-  --border: #7c86a6;
-  --accent: #1d3b9a;
-  --accent-hover: #142c78;
+  --rule-minor: #edf0f9;
+  --rule-major: #d6def1;
+  --margin-line: #de7d8a;
+  --ink: #1a233c;
+  --pencil: #4d5566;
+  --border: #7c869f;
+  --accent: #2647ae;
+  --accent-hover: #1a358d;
   --accent-text: #ffffff;
-  --red: #c62e3a;
+  --red: #c2272d;
   --red-text: #ffffff;
-  --green: #1e7a4c;
-  --ochre: #8a5a00;
-  --focus: #b35c00;
-  --selection: #d6ddf7;
+  --green: #1e7546;
+  --ochre: #8a5600;
+  --focus: #c26300;
+  --selection: #d8e5ff;
   --slip-shadow: 0 1px 2px rgb(22 33 61 / 0.12), 0 6px 16px rgb(22 33 61 / 0.08);
   --on-cover: #ffffff;
+  /* One header for every page; the area shows in the bar under it. White on it is 15:1. */
+  --header-bg: #182448;
 
-  /* Notebook covers: the header band of each area. White text on each is above 4.5:1. */
-  --cover-slate: #3d4a5c;
-  --cover-blue: #1d3b9a;
-  --cover-green: #1e6b47;
-  --cover-ochre: #7a5100;
-  --cover-teal: #136b78;
-  --cover-violet: #5b3a9e;
+  /* Area colors (OKLCH L 0.45): the bar under the header, and the lettering of each Home
+     door on its tint. White on each is above 7:1, each on its tint above 6:1. */
+  --cover-slate: #455063;
+  --cover-blue: #334f9d;
+  --cover-green: #056641;
+  --cover-ochre: #774914;
+  --cover-teal: #00626a;
+  --cover-violet: #614092;
+  --tint-slate: #e7effc;
+  --tint-blue: #e0efff;
+  --tint-green: #d9f7e5;
+  --tint-ochre: #ffeacf;
+  --tint-teal: #d4f6fa;
+  --tint-violet: #f3e8ff;
 
   /* Device inks, in order; red is kept for corrections. */
   --ink-0: #1d3b9a;
@@ -124,32 +136,41 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    /* Blackboard: green-black slate, chalk white, chalk pastels. */
-    --paper: #18241f;
-    --field: #101a16;
-    --rule-minor: rgb(236 239 230 / 0.045);
-    --rule-major: rgb(236 239 230 / 0.1);
-    --margin-line: #e98b98;
-    --ink: #ecefe6;
-    --pencil: #b9c3b6;
-    --border: #8a978b;
-    --accent: #a9c6ff;
-    --accent-hover: #c9dbff;
-    --accent-text: #0d1712;
-    --red: #ff9e96;
-    --red-text: #0d1712;
-    --green: #a3e2b6;
-    --ochre: #f2d38b;
-    --focus: #ffb35c;
-    --selection: #34503f;
+    /* Night page: ink-blue paper, chalk-white writing, pastel inks; the ruling barely shows. */
+    --paper: #0f1526;
+    --field: #080d1a;
+    --rule-minor: rgb(220 228 255 / 0.035);
+    --rule-major: rgb(220 228 255 / 0.08);
+    --margin-line: #cc7580;
+    --ink: #e7ebf4;
+    --pencil: #b0b8c8;
+    --border: #768096;
+    --accent: #9bbeff;
+    --accent-hover: #bbd5ff;
+    --accent-text: #080d1a;
+    --red: #fb9890;
+    --red-text: #080d1a;
+    --green: #95deae;
+    --ochre: #efcc83;
+    --focus: #ffa659;
+    --selection: #27365c;
     --slip-shadow: 0 1px 2px rgb(0 0 0 / 0.35), 0 6px 16px rgb(0 0 0 / 0.3);
+    --header-bg: #060a1a;
 
-    --cover-slate: #2f3a48;
-    --cover-blue: #28407f;
-    --cover-green: #245c42;
-    --cover-ochre: #6b4a0e;
-    --cover-teal: #1f5c66;
-    --cover-violet: #4e3787;
+    /* Darker area colors (OKLCH L 0.40); at night the Home doors are written in white on
+       them (above 8.5:1), so the tints are the colors themselves. */
+    --cover-slate: #394353;
+    --cover-blue: #2b4382;
+    --cover-green: #145538;
+    --cover-ochre: #633e16;
+    --cover-teal: #00525a;
+    --cover-violet: #523779;
+    --tint-slate: var(--cover-slate);
+    --tint-blue: var(--cover-blue);
+    --tint-green: var(--cover-green);
+    --tint-ochre: var(--cover-ochre);
+    --tint-teal: var(--cover-teal);
+    --tint-violet: var(--cover-violet);
 
     --ink-0: #a9c6ff;
     --ink-1: #cdb0ff;

@@ -18,6 +18,9 @@ jobs:
   version:
     needs: verify
     runs-on: ubuntu-24.04
+    # semantic-release checks push access with `git push --dry-run`, even in --dry-run.
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.next.outputs.version }}
     steps:

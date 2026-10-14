@@ -1412,7 +1412,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 3.0.9",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -4225,7 +4225,7 @@ dependencies = [
  "safetensors 0.8.0",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokenizers 0.23.2",
@@ -4268,7 +4268,7 @@ dependencies = [
  "nuee-proto",
  "postcard",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -4286,7 +4286,7 @@ dependencies = [
  "postcard",
  "proptest",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "subtle",
  "thiserror 2.0.21",
  "toml 1.1.8+spec-1.1.0",

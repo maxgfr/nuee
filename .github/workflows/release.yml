@@ -150,9 +150,21 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           NUEE_RELEASE_VERSION: ${{ needs.version.outputs.version }}
         run: npm run release
+  # One native build per platform, pushed by digest: compiling nuee for arm64 under QEMU
+  # takes hours. docker-manifest then puts both under the release tags.
   docker:
     needs: [version, publish]
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            os: ubuntu-24.04
+          - platform: linux/arm64
+            arch: arm64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
       packages: write
@@ -160,24 +172,63 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: v${{ needs.version.outputs.version }}
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: deploy/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/nuee,push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           sbom: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/nuee:${{ needs.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/nuee:latest
+      - name: Keep the image digest for the manifest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+  docker-manifest:
+    needs: [version, docker]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Tag the amd64 and arm64 images as one release image
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/nuee
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          refs=()
+          for digest in *; do
+            refs+=("$IMAGE@sha256:$digest")
+          done
+          docker buildx imagetools create -t "$IMAGE:$VERSION" -t "$IMAGE:latest" "${refs[@]}"
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
   pages:
     needs: [version, publish]
     permissions:

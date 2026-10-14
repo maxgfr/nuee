@@ -1,0 +1,16 @@
+{"mode":"dagger","game":"flappy","seed":1,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"flappy","seed":2,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"flappy","seed":3,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"flappy","seed":4,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"rescue","seed":1,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"rescue","seed":2,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"rescue","seed":3,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"rescue","seed":4,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"dodge","seed":1,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"dodge","seed":2,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"dodge","seed":3,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"dodge","seed":4,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"doom","seed":1,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"doom","seed":2,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"doom","seed":3,"n":4000,"tau":0.6,"max_pipes":200}
+{"mode":"dagger","game":"doom","seed":4,"n":4000,"tau":0.6,"max_pipes":200}

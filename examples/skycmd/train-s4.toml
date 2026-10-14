@@ -1,0 +1,73 @@
+# DiLoCo training of s4-micro's decision model over a team of Macs: each round, every worker
+# runs H inner steps of `sky-train s2-decide` (Muon + AdamW, kept local as in MuLoCo) from the
+# current parameters, sends back its new parameters, and the coordinator applies the robust
+# mean of the deltas with outer Nesterov momentum.
+#
+# The step-based flags (--steps, --stop-after, --init-params) come from skycmd's branch
+# `issue-3-diloco-inner`; `rev` below is still skycmd main (781d4c1), which does not have them.
+# Replace it with the merge commit once that branch is merged, before running this job.
+#
+# Exec trainer contract (nuee-train): the host writes the round's parameters to $NUEE_INIT and
+# substitutes $NUEE_STEPS (= inner_steps), $NUEE_SHARD (i/n), $NUEE_SEED and $NUEE_OUT; the
+# command must leave the new parameters, as safetensors with the same tensor names, at
+# $NUEE_OUT. The placeholders are whole arguments, so they are passed to `sh -c` as $1..$4.
+#
+# Sizes: s4-micro has 5.6 M parameters, 22.4 MB in f32 per sync. Each worker downloads the f32
+# parameters (22.4 MB) and the worker host uploads the delta int8-encoded with error feedback
+# (`--codec int8`, the default): about 5.6 MB per round, 4x less (22.4 MB with `--codec f32`).
+#
+# Schedule: rounds x inner_steps = 40 x 500 = 20,000 steps, the `--steps` below. Every worker
+# follows step / 20000 for the WSD learning rate and the QAT switch (--qat-frac 0.9: ternary
+# QAT after a 10% float warm-up, as in scripts/night-s4.sh), so the Macs agree on the schedule
+# whatever their speed.
+#
+# On each Mac that lends its GPU:
+#   - the records and tokenizer are gitignored in skycmd, so they are not in the task's fresh
+#     checkout: link a skycmd data directory (with data/s4/{gold,mix,heldout}, data/numeric and
+#     data/tok/tok-s4-4096.json) to the conventional place the command reads,
+#       mkdir -p ~/.cache/skycmd && ln -s /path/to/skycmd/data ~/.cache/skycmd/data
+#   - the local run directory (optimizer moments, RNG, step) lives in
+#     ~/.cache/skycmd/diloco/s4-micro and is resumed every round with --resume while the
+#     weights come from $NUEE_INIT (so after the first round the RNG is the resumed one and
+#     $NUEE_SEED only seeds a fresh directory); delete it before starting a new job. A worker
+#     that missed rounds has a smaller local step, so its schedule lags by those rounds.
+#   - the build reuses ~/.cache/skycmd/target (task directories are fresh checkouts), and
+#     needs Xcode's Metal toolchain (DEVELOPER_DIR below);
+#   - join with
+#       nuee join '<link>' --allow-exec https://github.com/maxgfr/skycmd@<rev> --gpu
+#     (`gpu = true` below: only workers that offer a GPU get these tasks), adding
+#     --exec-network for the first build if the crates are not cached yet.
+#   $NUEE_SHARD is not used: each worker samples its batches with its own RNG.
+#
+# On the coordinator, from a skycmd checkout that has run s2-pretrain for s4-micro (the job file
+# sits at the root of that checkout; `init` is relative to this file):
+#   cp /path/to/nuee/examples/skycmd/train-s4.toml . && nuee train train-s4.toml
+
+name = "s4-micro-diloco"
+kind = "train"
+
+[train]
+rounds = 40
+inner_steps = 500
+workers = 4
+outer_lr = 0.7
+outer_momentum = 0.9
+# The decision initialization written by `sky-train s2-pretrain` (runs/<name>/pretrain/init).
+init = "runs/s4-micro/pretrain/init/model.safetensors"
+trainer = "exec"
+
+[exec]
+repo = "https://github.com/maxgfr/skycmd"
+rev = "781d4c176b2d6e301d0eeb82c69781b356505ec0"
+argv = [
+  "sh", "-c",
+  'set -e; d="$HOME/.cache/skycmd"; s4="$d/data/s4"; run="$d/diloco/s4-micro"; export CARGO_TARGET_DIR="$d/target"; cargo run --release -p sky-train -- s2-decide --config configs/s4-micro.json --tokenizer "$d/data/tok/tok-s4-4096.json" --records "$s4/gold,$s4/mix,$s4/heldout,$d/data/numeric" --weights gold=0.45,mix=0.5,heldout=0,numeric=0.05 --batch 64 --qat-frac 0.9 --loop-dropout 0.25 --dis 0.5 --length-pool 16 --pad-to 32 --eval-every 1000000 --val-max 500 --resume --init-params "$1" --steps 20000 --stop-after "$2" --seed "$3" --out "$run"; cp "$run/last/model.safetensors" "$4"',
+  "s4-diloco",
+  "$NUEE_INIT",
+  "$NUEE_STEPS",
+  "$NUEE_SEED",
+  "$NUEE_OUT",
+]
+env = { DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer" }
+gpu = true
+timeout = "2h"

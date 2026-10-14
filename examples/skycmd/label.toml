@@ -1,0 +1,47 @@
+# Distributed teacher labelling for skycmd s4 (scripts/teacher-score.py).
+#
+# Paths are relative to this file: copy it to the root of a skycmd checkout, next to
+# data/s4/queue/p1-decisions.jsonl, and run `nuee run label.toml` from there (see README.md).
+
+name = "s4-p1-label"
+kind = "exec"
+# 5% of the shards are scored a second time (here when this Mac allows the command,
+# otherwise on another peer) and compared with the tolerance below.
+verify = "sample"
+sample = 0.05
+# Known-answer canaries would cost a whole extra shard each (minutes of GPU); off here.
+canary = 0.0
+
+[exec]
+repo = "https://github.com/maxgfr/skycmd"
+rev = "781d4c176b2d6e301d0eeb82c69781b356505ec0"
+argv = [
+  "python3", "scripts/teacher-score.py",
+  "--model", "mlx-community/Qwen3.5-4B-4bit",
+  "--in", "$NUEE_IN",
+  "--out", "$NUEE_OUT",
+]
+gpu = true
+timeout = "6h"
+
+[inputs]
+jsonl = "data/s4/queue/p1-decisions.jsonl"
+# About 4.6 minutes per shard at 7.2 records/s on an M5.
+lines_per_task = 2000
+
+[output]
+dir = "nuee-out/s4-p1-label"
+# Shards are concatenated into nuee-out/s4-p1-label/s4-p1-label.jsonl; teacher-score.py
+# numbers records by their line in the shard, so each uid is shifted by the shard's first
+# line: the merged file has the uids of a single unsharded run, in uid order.
+merge = "jsonl"
+uid_field = "uid"
+
+[compare]
+# MLX kernels are not bit-exact from one Mac to another (chip generation, GPU core count and
+# OS version change the reduction order), so two honest runs differ in the last digits of
+# the logits. Records are paired by uid; each logit may move by 0.1, the argmax (the
+# teacher's answer) must be the same and every other field identical.
+kind = "jsonl"
+field = "tlogits"
+tol = 0.1

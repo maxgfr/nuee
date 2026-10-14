@@ -1,0 +1,29 @@
+# DAgger data for skycmd's decision model: the s3-pico model plays each game, and the
+# simulator's oracle labels every state it visits (`DecisionRecord` JSON lines, the input of
+# `sky-train` fine-tuning). The same requests as `nuee run demo:skycmd-dagger`, as a job file.
+#
+# Paths are relative to this file. Run it from a nuee checkout after `scripts/build-tasks.sh`
+# (which builds target/tasks/skycmd-arena.wasm):
+#
+#   nuee run examples/skycmd/dagger.toml
+#
+# Every peer gets the module and the model (the `[wasm] assets`, handed to each task in the
+# asset envelope); outputs are the same bytes on every engine, so verification is exact.
+
+name = "skycmd-dagger"
+kind = "wasm"
+verify = "sample"
+deadline = "10m"
+
+[wasm]
+module = "../../target/tasks/skycmd-arena.wasm"
+assets = ["../../tasks/skycmd-arena/testdata/s3-pico.gguf"]
+
+[inputs]
+# One request per task: 4 games x 4 seeds, 4000 records each.
+jsonl = "dagger-requests.jsonl"
+lines_per_task = 1
+
+[output]
+dir = "nuee-out/skycmd-dagger"
+merge = "jsonl"

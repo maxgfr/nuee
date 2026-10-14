@@ -1,0 +1,58 @@
+# A small hyper-parameter sweep of `sky-train s2-decide` (skycmd at 781d4c1): one task per
+# [[sweep]] entry, run on a peer that approved these exact commands (see README.md).
+#
+# Every flag below exists in crates/sky-train/src/main.rs at that commit:
+#   s2-decide --config --tokenizer --records --minutes --out --seed --qat-frac --adam-lr
+#             --muon-lr --loop-dropout --batch --eval-every --log-every
+#
+# The records come from this machine: the whole `inputs.jsonl` file goes to every entry as
+# $NUEE_IN (paths are relative to this file, so copy it to the root of a skycmd checkout).
+# The command trains for a short budget in a scratch run directory, then copies the last line
+# of its log.jsonl (`acc_f32`, `acc_ternary`) to $NUEE_OUT; `nuee sweep` reads those values
+# for its summary table. The tokenizer is the small s2 fixture of the repository so the sweep
+# needs no pretraining run: this is a smoke-scale comparison, not a final model.
+
+name = "s2-decide-sweep"
+kind = "exec"
+# A training run is not reproducible bit for bit across Macs; do not recompute it.
+verify = "none"
+
+[exec]
+repo = "https://github.com/maxgfr/skycmd"
+rev = "781d4c176b2d6e301d0eeb82c69781b356505ec0"
+argv = [
+  "sh", "-c",
+  'run="$NUEE_OUT.run" && cargo run --release -p sky-train -- s2-decide --config configs/s2-pico.json --tokenizer crates/sky-infer/tests/fixtures/small_tokenizer_s2.json --records "$NUEE_IN" --minutes 10 --eval-every 200 --log-every 50 --out "$run" "$@" && tail -n 1 "$run/log.jsonl" > "$NUEE_OUT"',
+  "s2-decide-sweep",
+]
+gpu = true
+timeout = "1h"
+
+[inputs]
+# Peers take inputs of at most 8 MiB: a 5,000-record sample (about 5 MB) of the s4 queue,
+#   head -n 5000 data/s4/queue/p1-decisions.jsonl > data/s4/queue/sweep-sample.jsonl
+jsonl = "data/s4/queue/sweep-sample.jsonl"
+
+[output]
+dir = "nuee-out/s2-decide-sweep"
+
+# Each entry's `args` are appended to argv, so they reach s2-decide through "$@".
+[[sweep]]
+name = "qat-0.3"
+args = ["--qat-frac", "0.3"]
+
+[[sweep]]
+name = "qat-0.6"
+args = ["--qat-frac", "0.6"]
+
+[[sweep]]
+name = "qat-0.9"
+args = ["--qat-frac", "0.9"]
+
+[[sweep]]
+name = "qat-0.6-adam-2e-3"
+args = ["--qat-frac", "0.6", "--adam-lr", "0.002"]
+
+[[sweep]]
+name = "qat-0.6-dropout-0.1"
+args = ["--qat-frac", "0.6", "--loop-dropout", "0.1"]

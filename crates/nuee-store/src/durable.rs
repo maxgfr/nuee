@@ -1329,20 +1329,35 @@ mod io {
         net: &Net,
         secret: &[u8; 16],
         peer: EndpointId,
-    ) -> Result<(Connection, SendStream, RecvStream), String> {
+    ) -> Result<(Connection, SendStream, RecvStream), StoreError> {
         let conn = n0_future::time::timeout(CONNECT_TIMEOUT, net.connect(peer, ALPN_PIN))
             .await
-            .map_err(|_| "connection timed out".to_owned())?
-            .map_err(|e| e.to_string())?;
-        let (mut send, recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
+            .map_err(|_| StoreError::Unreachable("connection timed out".to_owned()))?
+            .map_err(|e| StoreError::Unreachable(e.to_string()))?;
+        let (mut send, recv) = match conn.open_bi().await {
+            Ok(streams) => streams,
+            Err(e) => return Err(refused_or_lost(&conn, e.to_string()).await),
+        };
         let hello = PinMsg::Hello {
             version: PROTO_VERSION,
             proof: nuee_proto::proof(PROOF_PIN, secret, &net.id(), &peer),
         };
-        send_msg(&mut send, &hello)
-            .await
-            .map_err(|e| e.to_string())?;
+        send_or_refused(&conn, &mut send, &hello).await?;
         Ok((conn, send, recv))
+    }
+
+    /// Writes one frame to the coordinator. A peer that is not let in closes the session
+    /// with REFUSED, which can land while the frame is still being written: the write then
+    /// fails, and the close code tells a refusal from a lost connection.
+    async fn send_or_refused(
+        conn: &Connection,
+        send: &mut SendStream,
+        msg: &PinMsg,
+    ) -> Result<(), StoreError> {
+        match send_msg(send, msg).await {
+            Ok(()) => Ok(()),
+            Err(e) => Err(refused_or_lost(conn, e.to_string()).await),
+        }
     }
 
     /// Reads and checks the hello of an incoming `nuee/pin/0` session.
@@ -2142,7 +2157,9 @@ mod io {
         member: EndpointId,
         msg: PinMsg,
     ) -> Result<PinMsg, String> {
-        let (conn, mut send, mut recv) = open_pin(net, secret, member).await?;
+        let (conn, mut send, mut recv) = open_pin(net, secret, member)
+            .await
+            .map_err(|e| e.to_string())?;
         let res = async {
             send_msg(&mut send, &msg).await.map_err(|e| e.to_string())?;
             answer(&mut recv).await
@@ -2183,7 +2200,9 @@ mod io {
         access: [u8; 16],
     ) -> Result<Replicated, String> {
         let providers = BoundedVec::try_from(providers).map_err(|e| e.to_string())?;
-        let (conn, mut send, mut recv) = open_pin(net, secret, member).await?;
+        let (conn, mut send, mut recv) = open_pin(net, secret, member)
+            .await
+            .map_err(|e| e.to_string())?;
         let res = async {
             let order = PinMsg::Replicate {
                 hash,
@@ -2267,9 +2286,7 @@ mod io {
         {
             tracing::debug!("ignoring the swarm relay: {e}");
         }
-        let (conn, mut send, mut recv) = open_pin(net, &job.secret, coordinator)
-            .await
-            .map_err(StoreError::Unreachable)?;
+        let (conn, mut send, mut recv) = open_pin(net, &job.secret, coordinator).await?;
         let res = async {
             let mut accepted = 0u8;
             for _ in 0..replicas.clamp(1, super::MAX_REPLICAS) {
@@ -2280,9 +2297,7 @@ mod io {
                     access: link.access,
                     ttl_s: 0,
                 };
-                send_msg(&mut send, &msg)
-                    .await
-                    .map_err(|e| StoreError::Unreachable(e.to_string()))?;
+                send_or_refused(&conn, &mut send, &msg).await?;
                 match answer(&mut recv).await {
                     Ok(PinMsg::Accepted { hash }) if hash == link.hash => accepted += 1,
                     Ok(PinMsg::Refused { reason, .. }) => {
@@ -2337,13 +2352,9 @@ mod io {
         {
             tracing::debug!("ignoring the swarm relay: {e}");
         }
-        let (conn, mut send, mut recv) = open_pin(net, &job.secret, coordinator)
-            .await
-            .map_err(StoreError::Unreachable)?;
+        let (conn, mut send, mut recv) = open_pin(net, &job.secret, coordinator).await?;
         let res = async {
-            send_msg(&mut send, &msg)
-                .await
-                .map_err(|e| StoreError::Unreachable(e.to_string()))?;
+            send_or_refused(&conn, &mut send, &msg).await?;
             match answer(&mut recv).await {
                 Ok(PinMsg::Accepted { hash }) if hash == id => Ok(ReplicaAnswer::Accepted(1)),
                 Ok(PinMsg::Refused { reason, .. }) => Ok(ReplicaAnswer::Refused(reason)),
@@ -2484,9 +2495,7 @@ mod io {
             }
         };
         connect_coordinator(net, job);
-        let (conn, mut send, mut recv) = open_pin(net, &job.secret, job.coordinator)
-            .await
-            .map_err(StoreError::Unreachable)?;
+        let (conn, mut send, mut recv) = open_pin(net, &job.secret, job.coordinator).await?;
         // Frames are read by their own task so that a progress tick never cuts one in half.
         let (frames, mut incoming) = mpsc::channel::<Result<PinMsg, String>>(4);
         let _reader = AbortOnDropHandle::new(n0_future::task::spawn(async move {
@@ -2502,9 +2511,7 @@ mod io {
         }));
         let res = async {
             for msg in &requests {
-                send_msg(&mut send, msg)
-                    .await
-                    .map_err(|e| StoreError::Unreachable(e.to_string()))?;
+                send_or_refused(&conn, &mut send, msg).await?;
                 let reply = n0_future::time::timeout(ANSWER_TIMEOUT, incoming.recv())
                     .await
                     .map_err(|_| StoreError::Unreachable("no answer in time".into()))?
@@ -2525,9 +2532,7 @@ mod io {
             loop {
                 let elapsed = start.elapsed();
                 if elapsed >= wait && !asked {
-                    send_msg(&mut send, &PinMsg::Where { hash: id })
-                        .await
-                        .map_err(|e| StoreError::Unreachable(e.to_string()))?;
+                    send_or_refused(&conn, &mut send, &PinMsg::Where { hash: id }).await?;
                     asked = true;
                 }
                 let tick = if asked {
@@ -2573,13 +2578,9 @@ mod io {
         hash: Hash,
     ) -> Result<Vec<Provider>, StoreError> {
         connect_coordinator(net, job);
-        let (conn, mut send, mut recv) = open_pin(net, &job.secret, job.coordinator)
-            .await
-            .map_err(StoreError::Unreachable)?;
+        let (conn, mut send, mut recv) = open_pin(net, &job.secret, job.coordinator).await?;
         let res = async {
-            send_msg(&mut send, &PinMsg::Where { hash })
-                .await
-                .map_err(|e| StoreError::Unreachable(e.to_string()))?;
+            send_or_refused(&conn, &mut send, &PinMsg::Where { hash }).await?;
             match answer(&mut recv).await {
                 Ok(PinMsg::Holders { hash: h, providers }) if h == hash => {
                     Ok(providers.into_inner())
@@ -2597,13 +2598,9 @@ mod io {
 
     async fn pin_exchange(net: &Net, job: &JobLink, msg: PinMsg) -> Result<PinMsg, StoreError> {
         connect_coordinator(net, job);
-        let (conn, mut send, mut recv) = open_pin(net, &job.secret, job.coordinator)
-            .await
-            .map_err(StoreError::Unreachable)?;
+        let (conn, mut send, mut recv) = open_pin(net, &job.secret, job.coordinator).await?;
         let res = async {
-            send_msg(&mut send, &msg)
-                .await
-                .map_err(|e| StoreError::Unreachable(e.to_string()))?;
+            send_or_refused(&conn, &mut send, &msg).await?;
             match answer(&mut recv).await {
                 Ok(reply) => Ok(reply),
                 Err(why) => Err(refused_or_lost(&conn, why).await),

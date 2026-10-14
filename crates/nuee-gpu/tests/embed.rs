@@ -108,6 +108,36 @@ fn corrupt_cache_file_is_never_used() {
 }
 
 #[test]
+fn concurrent_fetchers_fill_an_empty_cache() {
+    // Test binaries and `nuee` processes share one cache; each fetcher downloads on its own and
+    // none may see another's half-written file or lose its temporary file to it.
+    let tmp = tempfile::tempdir().unwrap();
+    std::thread::scope(|s| {
+        let loaders: Vec<_> = (0..4)
+            .map(|_| {
+                s.spawn(|| {
+                    block_on(Embedder::fetch_and_load(tmp.path(), EmbedDevice::Cpu))
+                        .expect("fetch and load next to other fetchers")
+                })
+            })
+            .collect();
+        for loader in loaders {
+            let embedder = loader.join().expect("loader thread");
+            assert_eq!(embedder.embed(&["a cold cache"]).unwrap().len(), DIM);
+        }
+    });
+    let dir = MINILM.dir(tmp.path());
+    let mut left: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    let mut pinned: Vec<String> = MINILM.files.iter().map(|f| f.path.to_owned()).collect();
+    pinned.sort();
+    assert_eq!(left, pinned, "temporary files left in {}", dir.display());
+}
+
+#[test]
 fn missing_files_are_an_error_not_a_download() {
     let tmp = tempfile::tempdir().unwrap();
     let err = Embedder::load(tmp.path(), EmbedDevice::Cpu).expect_err("nothing to load");

@@ -24,6 +24,7 @@ native = [
     "dep:tokio",
     "dep:safetensors",
     "dep:sha2",
+    "dep:objc2",
 ]
 
 [dependencies]
@@ -47,6 +48,7 @@ tracing = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { workspace = true, optional = true, features = ["metal"] }
+objc2 = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -284,6 +284,7 @@ pub use native::*;
 #[cfg(feature = "native")]
 mod native {
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
     use candle_core::{DType, Device, Tensor};
@@ -445,7 +446,12 @@ mod native {
                     Ok(None) => {}
                     Err(ModelError::Integrity { path }) => {
                         tracing::warn!("{path} is corrupt; downloading it again");
-                        std::fs::remove_file(&path).map_err(|e| io(Path::new(&path), e))?;
+                        match std::fs::remove_file(&path) {
+                            Ok(()) => {}
+                            // A concurrent fetcher removed or replaced it first.
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(e) => return Err(io(Path::new(&path), e)),
+                        }
                     }
                     Err(e) => return Err(e),
                 }
@@ -463,12 +469,37 @@ mod native {
                 if let Some(parent) = path.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
                 }
-                let part = path.with_extension("part");
-                std::fs::write(&part, &bytes).map_err(|e| io(&part, e))?;
-                std::fs::rename(&part, &path).map_err(|e| io(&path, e))?;
+                write_atomically(&path, &bytes)?;
             }
             Ok(dir)
         }
+    }
+
+    /// Writes `bytes` to `path` through a temporary file unique to this writer, then renames it
+    /// into place. Other threads and processes fetching the same model never share the
+    /// temporary file, and a reader sees either no file or the whole file. When two writers
+    /// race, both hold the same checked bytes and the last rename wins.
+    fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), ModelError> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let part = path.with_file_name(format!(
+            ".{name}.{}.{}.part",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let written = std::fs::write(&part, bytes)
+            .map_err(|e| io(&part, e))
+            .and_then(|()| std::fs::rename(&part, path).map_err(|e| io(path, e)));
+        if written.is_err()
+            && let Err(e) = std::fs::remove_file(&part)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("cannot remove {}: {e}", part.display());
+        }
+        written
     }
 
     fn http_client() -> Result<reqwest::Client, ModelError> {
@@ -688,9 +719,68 @@ mod native {
 
     fn gpu_device() -> Option<Device> {
         #[cfg(target_os = "macos")]
-        if let Ok(d) = Device::new_metal(0) {
-            return Some(d);
+        {
+            if let Err(missing) =
+                metal::supported(|class| objc2::runtime::AnyClass::get(class).is_some())
+            {
+                tracing::info!(
+                    "embedding on the CPU: Metal has no {} class (it needs macOS 15 or later)",
+                    missing.to_string_lossy()
+                );
+                return None;
+            }
+            if let Ok(d) = Device::new_metal(0) {
+                return Some(d);
+            }
         }
         None
+    }
+
+    #[cfg(target_os = "macos")]
+    mod metal {
+        use std::ffi::CStr;
+
+        /// Objective-C classes candle's Metal device instantiates when it is created. Without
+        /// one, creating the device panics instead of returning an error, so each is checked
+        /// first. `MTLResidencySet` appeared in macOS 15.
+        pub(super) const REQUIRED_CLASSES: &[&CStr] = &[c"MTLResidencySetDescriptor"];
+
+        /// `Ok` when every required class is present, else the first missing one.
+        pub(super) fn supported(has_class: impl Fn(&CStr) -> bool) -> Result<(), &'static CStr> {
+            match REQUIRED_CLASSES.iter().find(|c| !has_class(c)) {
+                Some(missing) => Err(missing),
+                None => Ok(()),
+            }
+        }
+
+        #[cfg(test)]
+        mod tests {
+            use super::*;
+
+            #[test]
+            fn metal_is_refused_when_residency_sets_are_missing() {
+                let sonoma = |c: &CStr| c != c"MTLResidencySetDescriptor";
+                assert_eq!(supported(sonoma), Err(c"MTLResidencySetDescriptor"));
+            }
+
+            #[test]
+            fn metal_is_kept_when_every_class_is_present() {
+                assert_eq!(supported(|_| true), Ok(()));
+            }
+
+            #[test]
+            fn the_check_asks_for_the_class_candle_creates() {
+                let asked = std::cell::RefCell::new(Vec::new());
+                let missing = supported(|c| {
+                    asked.borrow_mut().push(c.to_owned());
+                    false
+                });
+                assert_eq!(missing, Err(c"MTLResidencySetDescriptor"));
+                assert_eq!(
+                    asked.into_inner(),
+                    [c"MTLResidencySetDescriptor".to_owned()]
+                );
+            }
+        }
     }
 }

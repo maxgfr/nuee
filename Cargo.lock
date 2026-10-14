@@ -4219,6 +4219,7 @@ dependencies = [
  "naga",
  "nuee-core",
  "nuee-proto",
+ "objc2",
  "reqwest",
  "rustls",
  "safetensors 0.8.0",

@@ -9,7 +9,10 @@ pub mod framing;
 pub mod rtc;
 
 pub use admit::{Admission, AdmitConfig, AdmitError};
-pub use console::{MAX_CONSOLE_HELLO, recv_console_body, recv_console_hello, send_console_request};
+pub use console::{
+    MAX_CONSOLE_HELLO, console_exchange, recv_console_body, recv_console_hello,
+    send_console_request,
+};
 pub use endpoint::{Net, NetConfig, NetError, ONLINE_TIMEOUT, RelayChoice};
 pub use framing::{FrameError, read_frame, recv_msg, send_msg, write_frame};
 pub use iroh::{EndpointAddr, RelayUrl};

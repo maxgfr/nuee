@@ -12,8 +12,8 @@ use hyper_util::rt::TokioIo;
 use iroh::endpoint::{Connection, RecvStream, SendStream};
 use iroh::protocol::{AcceptError, ProtocolHandler};
 use nuee_net::{
-    AdmitError, FrameError, Net, read_frame, recv_console_body, recv_console_hello,
-    send_console_request, write_frame,
+    AdmitError, FrameError, Net, console_exchange, recv_console_body, recv_console_hello,
+    write_frame,
 };
 use nuee_proto::{
     ALPN_HTTP, BoundedBytes, BoundedString, BoundedVec, EndpointId, Header, HttpRequest,
@@ -329,10 +329,7 @@ pub async fn http_request(
             .open_bi()
             .await
             .map_err(|e| HostError::Connection(e.to_string()))?;
-        send_console_request(&mut send, &req).await?;
-        send.finish()
-            .map_err(|e| HostError::Connection(e.to_string()))?;
-        let answer = read_frame(&mut recv, MAX_HTTP_MSG).await?;
+        let answer = console_exchange(&mut send, &mut recv, &req).await?;
         conn.close(0u32.into(), b"done");
         decode_with_limit::<HttpResponse>(&answer, MAX_HTTP_MSG)
             .map_err(|e| HostError::Protocol(format!("malformed response: {e}")))

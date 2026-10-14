@@ -17,7 +17,7 @@ use nuee_core::{
 use nuee_net::driver::{BoxFut, SubmitError};
 use nuee_net::{
     CoordinatorDriver, CoordinatorHandle, DriverConfig, HostEvent, JoinError, Net, NetConfig,
-    ONLINE_TIMEOUT, RelayChoice, TaskExec, WorkerHandle, WorkerHostEvent, read_frame,
+    ONLINE_TIMEOUT, RelayChoice, TaskExec, WorkerHandle, WorkerHostEvent,
 };
 use nuee_proto::limits::{MAX_INLINE_INPUT, MAX_WASM_MEMORY};
 use nuee_proto::link::DEFAULT_BASE;
@@ -1548,11 +1548,7 @@ async fn http(node: Rc<Node>, link: String, req: JsValue) -> Result<JsValue, Web
         .map_err(|e| WebError::from(&e))?;
     let io = |e: &dyn std::fmt::Display| WebError::new(code::SWARM_ENDED, e.to_string());
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| io(&e))?;
-    nuee_net::send_console_request(&mut send, &request)
-        .await
-        .map_err(|e| io(&e))?;
-    send.finish().map_err(|e| io(&e))?;
-    let answer = read_frame(&mut recv, MAX_HTTP_MSG)
+    let answer = nuee_net::console_exchange(&mut send, &mut recv, &request)
         .await
         .map_err(|e| io(&e))?;
     let resp: HttpResponse = decode_with_limit(&answer, MAX_HTTP_MSG)

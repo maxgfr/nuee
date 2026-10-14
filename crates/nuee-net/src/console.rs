@@ -5,7 +5,7 @@
 //! `HttpRequest` frame (at most `MAX_HTTP_MSG` bytes), and finishes its side. The host
 //! checks the hello's proof before it reads, let alone allocates, the request frame.
 
-use iroh::endpoint::{RecvStream, SendStream};
+use iroh::endpoint::{RecvStream, SendStream, WriteError};
 use nuee_proto::{
     EndpointId, HttpRequest, MAX_HTTP_MSG, PROOF_HTTP, PROTO_VERSION, TcpMsg, decode_with_limit,
     encode_with_limit,
@@ -29,6 +29,26 @@ pub async fn send_console_request(
     };
     send_msg(send, &hello).await?;
     write_frame(send, &body).await
+}
+
+/// Sends `req` as a console request and returns the host's answer frame. A host that
+/// refuses the hello answers without reading the request and stops the stream, possibly
+/// while the request is still being written: its answer is read all the same.
+pub async fn console_exchange(
+    send: &mut SendStream,
+    recv: &mut RecvStream,
+    req: &HttpRequest,
+) -> Result<Vec<u8>, FrameError> {
+    match send_console_request(send, req).await {
+        // A stream the host already stopped cannot be finished; the answer read below
+        // reports any real failure.
+        Ok(()) => {
+            let _ = send.finish();
+        }
+        Err(FrameError::Write(WriteError::Stopped(_))) => {}
+        Err(e) => return Err(e),
+    }
+    read_frame(recv, MAX_HTTP_MSG).await
 }
 
 /// Reads and checks the console hello of `peer` under the gate's hello deadline, holding a

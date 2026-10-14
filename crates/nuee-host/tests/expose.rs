@@ -461,6 +461,22 @@ async fn wrong_secret_on_console_is_forbidden() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn refusal_reaches_a_client_still_sending_its_body() {
+    // The host never reads the body of a request with a wrong secret: it answers and stops
+    // the stream while the client is still writing a body far above the flow-control window.
+    let (port, count) = http_server().await;
+    let h = expose_with(port, |_| {}).await;
+    let mut bad = h.link.clone();
+    bad.secret = [0; 16];
+    let body = vec![7u8; nuee_proto::limits::MAX_HTTP_BODY];
+    let resp = http_request(&h.client, &bad, request("POST", "/echo", Vec::new(), &body))
+        .await
+        .expect("answer");
+    assert_eq!(resp.status, 403);
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn tunnel_idle_timeout_closes() {
     let (port, _count) = echo_server().await;
     let h = expose_with(port, |c| c.idle_timeout = Duration::from_millis(300)).await;

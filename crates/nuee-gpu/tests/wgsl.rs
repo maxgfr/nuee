@@ -3,6 +3,8 @@
 //! The GPU tests need an adapter (Metal on macOS, lavapipe on the Linux CI runner). Without
 //! one they fail: they never skip.
 
+use std::ops::Deref;
+use std::sync::{PoisonError, RwLock, RwLockReadGuard};
 use std::time::{Duration, Instant};
 
 use nuee_core::Compare;
@@ -14,10 +16,29 @@ use nuee_gpu::wgsl::{
 };
 use nuee_proto::{Comparator, FailKind, TaskKind};
 
-fn runner() -> GpuRunner {
-    GpuRunner::new().expect(
+/// Shared by the GPU tests, held exclusively by the endless shader's: GPU work cannot be
+/// preempted, so a test whose work lands behind that shader waits for it.
+static GPU: RwLock<()> = RwLock::new(());
+
+/// A runner that shares the GPU with the other tests, but not with the endless shader.
+struct Shared {
+    runner: GpuRunner,
+    _gpu: RwLockReadGuard<'static, ()>,
+}
+
+impl Deref for Shared {
+    type Target = GpuRunner;
+    fn deref(&self) -> &GpuRunner {
+        &self.runner
+    }
+}
+
+fn runner() -> Shared {
+    let gpu = GPU.read().unwrap_or_else(PoisonError::into_inner);
+    let runner = GpuRunner::new().expect(
         "no GPU adapter found: these tests need one (Metal on macOS, lavapipe/Vulkan on Linux)",
-    )
+    );
+    Shared { runner, _gpu: gpu }
 }
 
 /// The CPU task's formula (tasks/mandelbrot), in f64, widened to u32.
@@ -186,10 +207,11 @@ const ENDLESS_CHILD: &str = "NUEE_GPU_ENDLESS_CHILD";
 ///
 /// wgpu bounds shader loops by default, but at 2^64 iterations. GPU work cannot be preempted:
 /// on Metal it keeps running after the deadline until the process exits, so the shader runs in
-/// a child process to leave the GPU free for the other tests.
+/// a child process to leave the GPU free for the other tests, which wait until it exits.
 #[test]
 fn endless_shader_hits_the_deadline() {
     if std::env::var_os(ENDLESS_CHILD).is_none() {
+        let _gpu = GPU.write().unwrap_or_else(PoisonError::into_inner);
         let exe = std::env::current_exe().expect("test binary path");
         let out = std::process::Command::new(exe)
             .args(["endless_shader_hits_the_deadline", "--exact", "--nocapture"])

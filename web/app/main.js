@@ -4,7 +4,7 @@
 /** @typedef {import('./api').Executor} Executor */
 /** @typedef {import('./router').ViewName} ViewName */
 /** @typedef {import('./router').Route} Route */
-import { initLang, toggleLang, getLang, onLangChange, t } from './i18n.js';
+import { t } from './i18n.js';
 import { parseHash } from './router.js';
 import { detect, wasmProblem } from './lib/caps.js';
 import { Bridge, BridgeError } from './lib/bridge.js';
@@ -150,16 +150,7 @@ function fatal(key) {
 }
 
 async function boot() {
-  initLang(navigator.languages);
   relocalize(document);
-  const toggle = document.getElementById('lang-toggle');
-  if (toggle) {
-    // The button is named in the language it switches to ("FR — passer en français").
-    const langOfToggle = () => toggle.setAttribute('lang', getLang() === 'fr' ? 'en' : 'fr');
-    langOfToggle();
-    onLangChange(langOfToggle);
-    toggle.addEventListener('click', () => toggleLang());
-  }
 
   const caps = detect(window);
   const problem = wasmProblem(caps);

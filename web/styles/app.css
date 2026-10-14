@@ -244,26 +244,7 @@ a:hover {
 .top :focus-visible {
   outline-color: var(--on-cover);
 }
-.lang {
-  min-width: var(--target);
-  min-height: var(--target);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--on-cover);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--on-cover);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-.lang {
-  transition: background-color var(--transition);
-}
-.lang:hover {
-  background: color-mix(in srgb, var(--on-cover) 14%, transparent);
-}
-
-/* Phones: brand and language on the first row, the four destinations as equal tabs below. */
+/* Phones: brand on the first row, the four destinations as equal tabs below. */
 @media (max-width: 39.99rem) {
   .top {
     padding: 0;
@@ -272,10 +253,6 @@ a:hover {
     order: 1;
     flex: 1;
     padding-left: var(--gutter);
-  }
-  .lang {
-    order: 2;
-    margin: 2px var(--gutter) 2px 0;
   }
   .top nav {
     order: 3;

@@ -1,17 +1,6 @@
 /* Documentation pages (web/docs/): the same notebook, with the contents in the margin.
    Values come from tokens.css; the header, footer, buttons and ruling come from app.css. */
 
-/* The language switch is a link to the other page here, not a button. */
-a.lang {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-}
-a.lang:hover {
-  color: var(--on-cover);
-}
-
 .docs {
   max-width: var(--page);
 }

@@ -1,7 +1,7 @@
 // @ts-check
 // A tiny element builder. Text only ever goes through textContent and attributes through
 // setAttribute, so markup from the network can never be interpreted.
-import { t, onLangChange } from '../i18n.js';
+import { t } from '../i18n.js';
 
 /**
  * @typedef {string | number | boolean | null | undefined} Prim
@@ -113,8 +113,6 @@ export function relocalize(root) {
     }
   }
 }
-
-if (typeof document !== 'undefined') onLangChange(() => relocalize(document));
 
 /** Announces a short message to screen readers through the polite live region. @param {string} msg */
 export function announce(msg) {

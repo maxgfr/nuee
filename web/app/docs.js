@@ -1,10 +1,7 @@
 // @ts-check
-// Documentation pages: a Copy button after each command block, in the page's language.
+// Documentation pages: a Copy button after each command block.
 // The pages read fine without it; it only adds the buttons.
-import { setLang } from './i18n.js';
 import { copyButton } from './lib/dom.js';
-
-setLang(document.documentElement.lang === 'fr' ? 'fr' : 'en', false);
 
 for (const pre of document.querySelectorAll('pre.command')) {
   const block = document.createElement('div');

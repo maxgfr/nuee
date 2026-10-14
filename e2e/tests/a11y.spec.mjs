@@ -42,7 +42,6 @@ const PAGES = [
   { name: 'about', url: () => pageUrl('#/about'), ready: (p) => p.locator('#main h1'), action: (p) => p.locator('.nav a[href="#/about"]') },
   // The documentation pages are static: the primary action is the first Copy button docs.js adds.
   { name: 'docs-en', url: () => new URL('docs/', services().web).href, ready: (p) => p.locator('#main h1'), action: (p) => p.locator('.copy-btn').first() },
-  { name: 'docs-fr', url: () => new URL('docs/fr/', services().web).href, ready: (p) => p.locator('#main h1'), action: (p) => p.locator('.copy-btn').first() },
 ];
 
 for (const scheme of /** @type {const} */ (['light', 'dark'])) {
@@ -109,23 +108,6 @@ test('keyboard: arrowing through the job choices never leaves the page', async (
   expect(new URL(page.url()).hash).toBe('#/run');
   await page.getByRole('button', { name: 'Start' }).click();
   await expect(page).toHaveURL(/#\/train$/);
-  expect(problems).toEqual([]);
-});
-
-test('language toggle: its name starts with the label it shows, in the language it names', async ({ page }) => {
-  /** @type {string[]} */
-  const problems = [];
-  watch(page, 'lang', problems);
-  await page.goto(pageUrl('#/'));
-  await expect(page.locator('#open-link')).toBeVisible({ timeout: 30_000 });
-  const toggle = page.locator('#lang-toggle');
-  await expect(toggle).toHaveText('FR');
-  await expect(toggle).toHaveAccessibleName('FR — passer en français');
-  await expect(toggle).toHaveAttribute('lang', 'fr');
-  await toggle.click();
-  await expect(toggle).toHaveText('EN');
-  await expect(toggle).toHaveAccessibleName('EN — switch to English');
-  await expect(toggle).toHaveAttribute('lang', 'en');
   expect(problems).toEqual([]);
 });
 

@@ -1,12 +1,11 @@
 // @ts-check
-// Number, size and identifier formatting for the current language.
-import { getLang } from '../i18n.js';
+// Number, size and identifier formatting, in English.
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
 /** @param {number} n */
 export function fmtNumber(n, digits = 0) {
-  return new Intl.NumberFormat(getLang(), { maximumFractionDigits: digits }).format(n);
+  return new Intl.NumberFormat('en', { maximumFractionDigits: digits }).format(n);
 }
 
 /** Decimal byte sizes (1 MB = 10^6 bytes). @param {number} n */

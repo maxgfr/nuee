@@ -1,6 +1,6 @@
 // @ts-check
-// The documentation pages: anchors resolve, both languages have the same sections, every
-// `nuee <verb>` shown is a real verb, and nothing inline that the CSP would block.
+// The documentation page: anchors resolve, every `nuee <verb>` shown is a real verb, and
+// nothing inline that the CSP would block.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const web = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repo = path.resolve(web, '..');
-const PAGES = { en: path.join(web, 'docs', 'index.html'), fr: path.join(web, 'docs', 'fr', 'index.html') };
+const PAGES = { en: path.join(web, 'docs', 'index.html') };
 
 /** @param {string} file */
 async function page(file) {
@@ -119,20 +119,7 @@ for (const [lang, file] of Object.entries(PAGES)) {
     assert.ok(csp(html), 'CSP meta missing');
     assert.equal(csp(html), csp(app));
     assert.match(html, new RegExp(`<html lang="${lang}"`));
-    assert.match(html, /<link rel="canonical" href="https:\/\/maxgfr\.github\.io\/nuee\/docs\/(fr\/)?">/);
-    assert.match(html, /<link rel="alternate" hreflang="en" href="https:\/\/maxgfr\.github\.io\/nuee\/docs\/">/);
-    assert.match(html, /<link rel="alternate" hreflang="fr" href="https:\/\/maxgfr\.github\.io\/nuee\/docs\/fr\/">/);
+    assert.match(html, /<link rel="canonical" href="https:\/\/maxgfr\.github\.io\/nuee\/docs\/">/);
+    assert.doesNotMatch(html, /rel="alternate"/, 'no alternate language link: the page is English only');
   });
 }
-
-test('docs: English and French have the same sections', async () => {
-  const en = headingIds(await page(PAGES.en));
-  const fr = headingIds(await page(PAGES.fr));
-  assert.ok(en.length >= 30, `only ${en.length} headings`);
-  assert.deepEqual(fr, en);
-});
-
-test('docs: each page links to the other language', async () => {
-  assert.match(await page(PAGES.en), /<a class="lang" href="fr\/" hreflang="fr"/);
-  assert.match(await page(PAGES.fr), /<a class="lang" href="\.\.\/" hreflang="en"/);
-});

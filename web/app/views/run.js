@@ -10,7 +10,7 @@
 import { h, setText, announce, download, alertBox, icon, focusOn } from '../lib/dom.js';
 import { readTextFile } from '../lib/labels.js';
 import { embedJob, embedInputs, mergeEmbed, daggerInputs, mergeJsonl, EMBED_TAU } from '../lib/jobs.js';
-import { t, onLangChange } from '../i18n.js';
+import { t } from '../i18n.js';
 import { errorArea, framedNotice, linkPanel, progressBar, fingerprintBlock } from '../lib/ui.js';
 import { fmtNumber, fmtBytes, fmtFingerprint, shortHash } from '../lib/format.js';
 import { defaultCores, poolSize, supportedKinds, MiB } from '../lib/pool.js';
@@ -637,7 +637,6 @@ function liveView(app, kind, total, webrtc, embed) {
     renderDetail();
   };
   labelAll();
-  const unLang = onLangChange(labelAll);
 
   // Corrections: one red note in the margin with the count, the entries in a disclosure.
   // In pencil while nothing was corrected; red from the first correction.
@@ -776,7 +775,6 @@ function liveView(app, kind, total, webrtc, embed) {
     setText(presentCount, 'run.presentCount', { done: fmtNumber(counts.done), total: fmtNumber(total) });
   }
   renderStats();
-  const unLangStats = onLangChange(renderStats);
 
   /** @type {ReturnType<typeof setInterval> | null} */
   let poll = null;
@@ -1077,8 +1075,6 @@ function liveView(app, kind, total, webrtc, embed) {
       if (poll) clearInterval(poll);
       cancelAnimationFrame(snapFrame);
       ro.disconnect();
-      unLang();
-      unLangStats();
       scheme.removeEventListener('change', onScheme);
       if (disposeLink) disposeLink();
     },

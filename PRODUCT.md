@@ -44,7 +44,7 @@ The link is the cluster. A link carries the coordinator's key and a secret, so o
 - Name: Nuée (French for a swarm, a flock); the CLI is `nuee`.
 - Voice: calm, clean, reassuring. Plain words, exact numbers, no hype.
 - Identity: a murmuration drawn on a canvas, one bird per participant, frozen when `prefers-reduced-motion` is set.
-- Bilingual French and English, chosen from the browser language, switchable.
+- English only.
 
 ## Evidence on Hand
 
@@ -62,4 +62,4 @@ The link is the cluster. A link carries the coordinator's key and a secret, so o
 
 ## Accessibility & Inclusion
 
-WCAG 2.2 AA: contrast in light and dark schemes, visible focus, full keyboard use, `aria-live` progress, 44 px targets, reduced motion honoured, French and English throughout.
+WCAG 2.2 AA: contrast in light and dark schemes, visible focus, full keyboard use, `aria-live` progress, 44 px targets, reduced motion honoured.

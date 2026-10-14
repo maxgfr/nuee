@@ -3,18 +3,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fmtDuration, Timings, reduceWaiting, waitingTotal, taskDetail } from '../app/lib/board.js';
-import { setLang } from '../app/i18n.js';
 
-test('durations read like the rest of the UI, in both languages', () => {
-  setLang('en', false);
+test('durations read like the rest of the UI', () => {
   assert.equal(fmtDuration(420), '420 ms');
   assert.equal(fmtDuration(999.6), '1,000 ms');
   assert.equal(fmtDuration(1800), '1.8 s');
   assert.equal(fmtDuration(59_940), '59.9 s');
   assert.equal(fmtDuration(150_000), '2.5 min');
-  setLang('fr', false);
-  assert.equal(fmtDuration(1800), '1,8 s');
-  setLang('en', false);
 });
 
 test('average time per device counts timed accepted tasks only', () => {
@@ -47,12 +42,8 @@ test('waiting for a checker: set by the event, cleared when the job proceeds', (
 });
 
 test('the detail line names the task, its device and its measured time, or a dash', () => {
-  setLang('en', false);
   assert.equal(taskDetail(63, '🐳 🌻 🎲', 68), 'Task 63 · 🐳 🌻 🎲 · 68\u00a0ms');
   assert.equal(taskDetail(7, '🐳 🌻 🎲', null), 'Task 7 · 🐳 🌻 🎲 · —');
   assert.equal(taskDetail(5, null, null), 'Task 5 · —');
   assert.equal(taskDetail(2, 'x', 1800), 'Task 2 · x · 1.8\u00a0s');
-  setLang('fr', false);
-  assert.equal(taskDetail(63, '🐳 🌻 🎲', 68), 'Tâche 63 · 🐳 🌻 🎲 · 68\u00a0ms');
-  setLang('en', false);
 });

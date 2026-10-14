@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { jobKey, rejectKey, endedTone, readTextFile } from '../app/lib/labels.js';
 import { tilePixels, rgbOf } from '../app/lib/board.js';
 import { flightClock, flightPhase, FLIGHT_MS, SETTLE_MS } from '../app/lib/murmuration.js';
-import { DICTS } from '../app/i18n.js';
+import { STRINGS } from '../app/i18n.js';
 
 test('built-in job names are shown by their translated label, other names as they are', () => {
   assert.equal(jobKey('mandelbrot'), 'run.job.mandelbrot');
@@ -19,14 +19,14 @@ test('built-in job names are shown by their translated label, other names as the
   assert.equal(jobKey('toString'), null);
   for (const n of ['mandelbrot', 'mandelbrot-gpu', 'skycmd-eval', 'skycmd-dagger', 'embed']) {
     const k = /** @type {string} */ (jobKey(n));
-    assert.ok(DICTS.en[k] && DICTS.fr[k], k);
+    assert.ok(STRINGS[k], k);
   }
 });
 
 test('a refusal reason is a sentence, never the raw code', () => {
   assert.equal(rejectKey('too many jobs'), 'join.jobRejected.tooMany');
   assert.equal(rejectKey('bad signature'), 'join.jobRejected.invalid');
-  for (const k of ['join.jobRejected.tooMany', 'join.jobRejected.invalid']) assert.ok(DICTS.en[k] && DICTS.fr[k], k);
+  for (const k of ['join.jobRejected.tooMany', 'join.jobRejected.invalid']) assert.ok(STRINGS[k], k);
 });
 
 test('only a ban or a refusal ends a contribution with an alert', () => {
@@ -44,7 +44,7 @@ test('a picked text file says what is wrong with it', () => {
   assert.deepEqual(readTextFile(new Uint8Array([0xff, 0xfe, 0x00, 0x41])), { error: 'run.embed.notText' });
   assert.deepEqual(readTextFile(enc.encode(' \n\n\t')), { error: 'run.embed.empty' });
   assert.deepEqual(readTextFile(new Uint8Array(0)), { error: 'run.embed.empty' });
-  for (const k of ['run.embed.notText', 'run.embed.empty']) assert.ok(DICTS.en[k] && DICTS.fr[k], k);
+  for (const k of ['run.embed.notText', 'run.embed.empty']) assert.ok(STRINGS[k], k);
 });
 
 test('a fractal tile shades from the paper to the device ink', () => {

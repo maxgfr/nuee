@@ -457,6 +457,17 @@ async fn a_coordinator_without_local_slots_still_recomputes_and_bans_a_liar() {
 
     let liar_net = worker_net(4, &swarm).await;
     let liar_id = liar_net.id();
+    // The liar joins first: 20 small tasks can all be done by the honest workers before a
+    // late liar gets one, and then there is nothing to catch.
+    let liar = join(
+        &liar_net,
+        &link(&swarm, SECRET),
+        worker_cfg(),
+        Arc::new(Liar),
+        Arc::new(MemBlobHub::shared(swarm.blobs.map())),
+    )
+    .await
+    .expect("join");
     let mut workers = Vec::new();
     for (seed, exec) in [
         (2u8, Arc::new(Reverse) as Arc<dyn TaskExec>),
@@ -474,15 +485,6 @@ async fn a_coordinator_without_local_slots_still_recomputes_and_bans_a_liar() {
         .expect("join");
         workers.push((net, w));
     }
-    let liar = join(
-        &liar_net,
-        &link(&swarm, SECRET),
-        worker_cfg(),
-        Arc::new(Liar),
-        Arc::new(MemBlobHub::shared(swarm.blobs.map())),
-    )
-    .await
-    .expect("join");
 
     let mut accepted = std::collections::BTreeMap::new();
     let mut banned = false;

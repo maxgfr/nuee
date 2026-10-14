@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en" data-area="docs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https: wss: ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*; img-src 'self' data: blob:; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types nuee-worker">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#3d4a5c" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#2f3a48" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Nuée documentation: how a link becomes a private compute and file swarm, the browser page, every nuee command, verification, security and limits.">
+<title>Documentation · Nuée</title>
+<link rel="canonical" href="https://maxgfr.github.io/nuee/docs/">
+<link rel="alternate" hreflang="en" href="https://maxgfr.github.io/nuee/docs/">
+<link rel="alternate" hreflang="fr" href="https://maxgfr.github.io/nuee/docs/fr/">
+<link rel="alternate" hreflang="x-default" href="https://maxgfr.github.io/nuee/docs/">
+<link rel="icon" href="../icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<link rel="stylesheet" href="../styles/tokens.css">
+<link rel="stylesheet" href="../styles/app.css">
+<link rel="stylesheet" href="../styles/docs.css">
+<script type="module" src="../app/docs.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="brand" href="../" aria-label="Nuée, home"><span>Nuée</span></a>
+  <nav aria-label="Main">
+    <ul class="nav">
+      <li><a href="../#/run">Launch</a></li>
+      <li><a href="../#/share">Share</a></li>
+      <li><a href="./" aria-current="page">Docs</a></li>
+      <li><a href="../#/about">About</a></li>
+    </ul>
+  </nav>
+  <a class="lang" href="fr/" hreflang="fr" lang="fr" aria-label="FR, documentation en français">FR</a>
+</header>
+<main id="main" tabindex="-1">
+<div class="docs">
+<div class="doc-intro">
+<h1 id="doc-title">Nuée documentation</h1>
+<p class="lead">Nuée turns a link into a small, private, short-lived cluster made of the laptops and phones of people who trust each other. This page explains what it does, how it works, every command, and where its guarantees stop.</p>
+</div>
+<nav class="toc" aria-labelledby="toc-title">
+  <details class="toc-fold">
+    <summary id="toc-title">On this page</summary>
+    <ol>
+      <li><a href="#what">What Nuée is</a></li>
+      <li><a href="#quick-start">Quick start</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#modules">What you can run</a></li>
+      <li><a href="#security">Security and privacy</a></li>
+      <li><a href="#cli">Command reference</a></li>
+      <li><a href="#troubleshooting">Troubleshooting and limits</a></li>
+      <li><a href="#credits">Licences and credits</a></li>
+    </ol>
+  </details>
+</nav>
+<article class="doc" aria-labelledby="doc-title">
+
+<section aria-labelledby="what">
+<h2 id="what"><a href="#what">What Nuée is</a></h2>
+<p>Someone launches a job, from the <code>nuee</code> command line or from the web page, and gets a link and a QR code. Everyone who opens the link joins the swarm: a browser tab lends a few cores, a <code>nuee join</code> lends a whole machine. The job is cut into tasks, the tasks are handed out, the results come back and are checked. The same links also carry encrypted files, exposed services and static sites.</p>
+<p><strong>The link is the cluster.</strong> It holds the coordinator’s public key, the relay to reach it, and a 16-byte secret. Opening it is the admission; there is no account, no sign-up and no server of ours in the middle.</p>
+<p>It is meant for a group that already trusts itself: a talk or workshop where the audience joins from their phones, a class, a lab or a team with a few Macs and Linux boxes. Typical work is batch work that splits into independent tasks: fractals and simulations, evaluating a small model, sentence embeddings, sweeps, training small models, and handing files around.</p>
+<p>What it is not:</p>
+<ul>
+  <li><strong>Not a market.</strong> There is no payment, no credit and no token. Nobody rents anything to anybody.</li>
+  <li><strong>Not a way to run large language models across peers.</strong> A model is never split between devices. The <code>llm</code> kind only scores answers with a small model that fits on one device.</li>
+  <li><strong>Not a way to run strangers’ native code in your browser.</strong> Browsers only run WebAssembly and WebGPU tasks in a sandbox. Native commands (<code>exec</code>) run only on command-line machines whose operator approved that exact command from one exact commit.</li>
+  <li><strong>Not anonymous and not for strangers.</strong> Relay operators see IP addresses, and anyone holding a link is a member. See <a href="#security">Security and privacy</a>.</li>
+</ul>
+</section>
+
+<section aria-labelledby="quick-start">
+<h2 id="quick-start"><a href="#quick-start">Quick start</a></h2>
+
+<h3 id="quick-browser"><a href="#quick-browser">In the browser</a></h3>
+<p>Open <a href="../">the web page</a>. It needs nothing installed.</p>
+<ol>
+  <li><strong>Launch.</strong> Choose <a href="../#/run">Launch</a>, pick a computation (fractal on CPU or GPU, skycmd evaluation, embeddings, train together, or your own <code>.wasm</code> module), choose the verification mode and press Start. The page shows a link, its QR code and six symbols. <em>Present full screen</em> enlarges the QR code for a projector.</li>
+  <li><strong>Join from a phone.</strong> Scan the QR code. The join card says who is asking (the six symbols), what will run and what a task can and cannot do, and offers how many cores to lend, the GPU when WebGPU is available, and an “only while plugged in” option. One tap on <em>Contribute</em> starts it; Pause and Stop are always there.</li>
+  <li><strong>Compare the six symbols.</strong> They are derived from the coordinator’s key only. If the symbols on the phone differ from the ones on the presenter’s screen, the link was swapped on its way: close the page.</li>
+  <li><strong>Watch.</strong> The presenter’s page fills a grid, one square per task, in each device’s ink. A result that was rejected is circled in red in the margin and stays circled once redone.</li>
+</ol>
+<p>What runs in a tab: WebAssembly tasks in a pool of Web Workers, WGSL shaders through WebGPU when the browser has it, the embedding model, and the small LLM scorer on devices that do not report less than 4 GB of memory. What cannot run in a tab: native <code>exec</code> commands, pinning, offering storage, and downloads above 256 MiB. A mobile tab stops when it goes to the background, so keep the screen on while contributing.</p>
+
+<h3 id="quick-cli"><a href="#quick-cli">With the command line</a></h3>
+<p>The <code>nuee</code> command runs on macOS and Linux. Windows machines join through the browser.</p>
+<pre class="command"><code>brew install maxgfr/tap/nuee</code></pre>
+<p>Or build it from a checkout of the repository (see <a href="https://github.com/maxgfr/nuee#building-from-source">Building from source</a>):</p>
+<pre class="command"><code>cargo build --release -p nuee</code></pre>
+<p>Check the machine. <code>selftest</code> needs no key, no network and no files:</p>
+<pre class="command"><code>nuee selftest</code></pre>
+<p>On a source build without the <code>embed-tasks</code> feature it printed:</p>
+<pre class="output"><code>✓ wasm golden: 3 golden outputs match
+✓ demo modules: embedded: mandelbrot, toy-trainer, optdigits; not embedded: skycmd-arena (build with --features embed-tasks)
+✓ links: job, file and pin links round-trip
+✓ manifest: manifest signatures and admission proofs hold
+✓ encryption: age encryption round-trips and detects tampering
+✓ swarm: in-memory swarm finished 6 tasks
+selftest ok</code></pre>
+<p>Launch the fractal demo:</p>
+<pre class="command"><code>nuee run demo:mandelbrot</code></pre>
+<p>It prints a QR code, then the link and the fingerprint once the relay is reachable, and a progress line while peers work. A run with one <code>nuee join</code> worker, on an Apple M5 with a local relay, printed (QR code, path prefix and most progress lines left out):</p>
+<pre class="output"><code>https://maxgfr.github.io/nuee/#/J/AGG7I54LT3RYDIITQGUZBA6F…
+fingerprint 🗻 🎃 💧 🎣 🍉 🥐  (compare with the screen of whoever joins)
+256 tasks, verify Sample, 5 local slots, outputs in …/nuee-out/mandelbrot
+waiting for 1 peer(s) to join
+peer joined: dfbe5bccab04…c896ec (nuee-cli/0.0.0)
+███████████████████████░░░░░░░ 197/256 tasks verified 145 · 1 peers · 1223.6/s
+image: nuee-out/mandelbrot/mandelbrot.ppm
+done: 256 tasks, results in nuee-out/mandelbrot/results.json</code></pre>
+<p>That run used <code>--wait-peers 1</code> so the job waited for the worker; without it the coordinator starts computing at once with half its cores. On another machine, join with the link. Passing <code>-</code> reads it from standard input, so it does not land in your shell history:</p>
+<pre class="command"><code>nuee join -</code></pre>
+<pre class="output"><code>coordinator fingerprint 🗻 🎃 💧 🎣 🍉 🥐  (compare with the coordinator's screen)
+joined with 5 slots
+job 0: mandelbrot
+task 9 done in 43 ms (1 so far)
+…
+left the swarm after 84 tasks</code></pre>
+<p>Or open the link on a phone: the tab joins the same swarm. Every verb prints human text; add <code>--json</code> to get one JSON event per line on standard output instead (see <a href="#json">NDJSON events</a>).</p>
+</section>
+
+<section aria-labelledby="how">
+<h2 id="how"><a href="#how">How it works</a></h2>
+
+<h3 id="network"><a href="#network">The network: iroh</a></h3>
+<p>Every peer is an <a href="https://iroh.computer">iroh</a> endpoint whose identity is an ed25519 public key. Connections are QUIC with TLS 1.3, and both ends authenticate with their keys, so a worker only ever talks to the key in its link. Command-line peers try a direct UDP path first; when there is none (a strict firewall, a browser), traffic goes through a relay. Browsers always go through a relay over a WebSocket. The relay forwards encrypted packets and cannot read them.</p>
+<p>Who sees which IP address: the relay operator sees the address of every peer connected to it, and when two command-line peers connect directly they see each other’s address. Other peers never see a browser’s address, except when the presenter turns on direct browser connections (WebRTC): then the presenter’s page and each participant who accepts see each other’s address. The default relays are run by n0 for development and hobby use; for anything else run your own with <code>nuee relay</code> or <code>nuee serve --anchor</code>.</p>
+
+<h3 id="link"><a href="#link">The link is a capability</a></h3>
+<p>A link looks like <code>https://maxgfr.github.io/nuee/#/J/AGG7…</code>. Everything after <code>#</code> is the fragment, which browsers never send to the web server, so GitHub Pages never sees it. The letter says what the link is:</p>
+<table>
+  <thead><tr><th scope="col">Letter</th><th scope="col">Link</th><th scope="col">Carries</th></tr></thead>
+  <tbody>
+    <tr><td><code>J</code></td><td>Job swarm</td><td>the coordinator’s key, its relay, a 16-byte secret</td></tr>
+    <tr><td><code>F</code></td><td>File</td><td>up to 4 providers, the BLAKE3 hash and size of the ciphertext, a 16-byte access secret, the age decryption key</td></tr>
+    <tr><td><code>S</code></td><td>Static site</td><td>the same as <code>F</code>, opened as a site</td></tr>
+    <tr><td><code>X</code></td><td>Exposed service, or an anchor</td><td>the host’s key, its relay, a 16-byte secret</td></tr>
+    <tr><td><code>P</code></td><td>Pin</td><td>a file link without the key: enough to keep ciphertext, not to read it</td></tr>
+  </tbody>
+</table>
+<p>The payload is base32 of a version byte, the encoded body and a 4-byte BLAKE3 checksum. A link cut while copying is reported as truncated, a link from a newer version as unsupported, and a damaged one as corrupt, so the error says what to do. Anyone holding a link can use it: treat it like a password, show it in the room, do not post it publicly.</p>
+
+<h3 id="admission"><a href="#admission">Admission</a></h3>
+<p>A joining peer proves it holds the secret without sending it: it sends an HMAC-SHA256 of both peers’ keys, keyed with the secret. The coordinator recomputes it and compares in constant time; because both keys are inside, the proof is useless on any other connection. A peer has 5 seconds to say hello, at most 64 handshakes run at once, and five wrong proofs in a minute shut a peer out for a minute. With <code>--approve</code> (or “Approve each device before it joins” on the page) every admitted peer also waits for a yes or no, and reads none of the swarm’s blobs until the yes. A relay address a peer announces is used only if it is the coordinator’s own relay or an <code>https</code> address outside private, loopback and link-local ranges, and so is any relay a peer names for a stored copy; only a link you open yourself may point at a local relay. A swarm takes at most 256 peers.</p>
+
+<h3 id="leases"><a href="#leases">Jobs, tasks and leases</a></h3>
+<p>The coordinator signs a manifest for each job (kind, module hash, memory cap, number of tasks, verification policy, comparator, deadline) and sends it to every peer; workers refuse a manifest not signed by the key in their link. Workers say how many tasks they can take, and the coordinator hands out leases: one task, its input, a deadline. A worker runs it and returns the output with its signature. A task that fails (trap, out of memory, timeout) is handed to another peer, up to three attempts; a failure is never counted as cheating. A lease past its deadline is reassigned; the deadline is 60 seconds by default, then three times the peer’s median duration, between 5 seconds and 10 minutes. Outputs above 1 MiB travel as blobs that the coordinator fetches and checks against their hash. Workers apply their own limits on module size, memory, inputs and outputs whatever the manifest says, and keep at most 256 MiB of modules and assets between leases, only for the jobs they still hold.</p>
+<p>Interrupted runs resume: outputs already in the output directory are kept, so the same command picks up where it stopped (<code>--no-resume</code> starts over).</p>
+
+<h3 id="verification"><a href="#verification">Verification</a></h3>
+<p>Verification is recomputation. WebAssembly tasks give the same output bytes in wasmtime, Chromium, Firefox and Safari, so two honest runs are compared byte for byte. Kinds that use floats on a GPU or a model are compared with a measured tolerance instead (see <a href="#modules">What you can run</a>).</p>
+<table>
+  <thead><tr><th scope="col">Mode</th><th scope="col">What happens</th></tr></thead>
+  <tbody>
+    <tr><td><code>sample</code> (default)</td><td>One result is accepted. The coordinator recomputes 10 % of the results itself (<code>--sample</code>) and slips in 3 % canaries (<code>--canary</code>): tasks whose answer it already knows. Fresh tasks go out in a random order, so the task number gives nothing away, but a canary repeats an input: identities sharing state can recognise it. Canaries catch naive cheaters; the hidden recompute is the guarantee.</td></tr>
+    <tr><td><code>full</code></td><td>Every task runs twice, by two different executors, and both outputs must agree. Two agreeing peers may be two identities of one cheater, so the coordinator still recomputes the same sampled share itself (<code>--sample</code>) and sends canaries; a pair that disagrees with it is banned.</td></tr>
+    <tr><td><code>none</code></td><td>The first result is accepted. Use it only with people and machines you trust.</td></tr>
+  </tbody>
+</table>
+<p>When two results disagree, the coordinator runs the task itself and its result decides. Only then is the dishonest peer banned, and every result it produced that was not yet verified is computed again (retroactive redo). A result with a bad signature or a wrong hash bans its sender at once.</p>
+<p>The coordinator keeps this role even when it takes no work (<code>--local-slots 0</code>, or “This page computes too” unchecked): checking runs on its own capacity, separate from contributing.</p>
+<p><strong>When the coordinator cannot run the kind</strong> (an <code>exec</code> job without <code>--allow-exec</code>, <code>wgsl</code> without a GPU, <code>llm</code> without <code>--llm</code>), there is nobody to arbitrate. Results are then only compared between two peers, a disagreement discards both, and nobody is banned. No canaries are sent, since a known answer is only one the coordinator computed itself; the peers in a disagreement have their other unverified results redone and need two agreeing executions from then on. <code>nuee run</code> says so before the link:</p>
+<pre class="output"><code>this machine cannot run these tasks, so it cannot check them: results are only compared between two peers, which one person holding the link can fake</code></pre>
+<p>A result is never accepted unchecked to keep such a job moving. If no second peer able to run the kind is connected, the tasks wait, and the coordinator says so once:</p>
+<pre class="output"><code>2 tasks wait for a second peer able to run them: this machine cannot check Exec results and no other admitted peer can run them. Join another device with --allow-exec for this command, or restart with --verify none to accept unchecked results</code></pre>
+<p>Browser keys are made fresh for each tab, so one person holding the link can open many tabs: “two different peers agree” proves little. Real assurance comes from the coordinator’s own recomputation, a higher sample rate, <code>full</code>, or <code>--approve</code>.</p>
+
+<h3 id="corrections"><a href="#corrections">Corrections on the live board</a></h3>
+<p>The presenter’s page shows one square per task. A square fills with the ink of the device that computed it; a failed attempt is dashed; a rejected result is circled in red, and the circle stays after the task is redone and verified, with the honest device’s ink inside and a small red tick. The margin keeps a single red note with the number of corrections and, behind <em>Show the corrections</em>, the list: which task disagreed, which device was banned and how many tasks were redone. The device table shows each device’s fingerprint, type (browser or command line), tasks done and verified, state and average time.</p>
+</section>
+
+<section aria-labelledby="modules">
+<h2 id="modules"><a href="#modules">What you can run</a></h2>
+<p>Each kind below has a command that was run for this page, and its limits. Timings marked “debug build” come from a development build of <code>nuee</code> on an Apple M5 with a local relay; a release build is faster.</p>
+<ul class="module-list">
+  <li><a href="#cpu">Verified CPU compute (WebAssembly)</a></li>
+  <li><a href="#job-files">Your own module and job files</a></li>
+  <li><a href="#gpu">GPU shaders (WGSL)</a></li>
+  <li><a href="#embeddings">Embeddings</a></li>
+  <li><a href="#llm">LLM option scoring</a></li>
+  <li><a href="#exec">Native commands (exec)</a></li>
+  <li><a href="#sweeps">Sweeps</a></li>
+  <li><a href="#storage">Files and durable storage</a></li>
+  <li><a href="#training">Training</a></li>
+  <li><a href="#hosting">Services and sites</a></li>
+  <li><a href="#anchor">The anchor</a></li>
+  <li><a href="#skycmd">skycmd</a></li>
+</ul>
+
+<h3 id="cpu"><a href="#cpu">Verified CPU compute (WebAssembly)</a></h3>
+<p>The default kind. A task module is plain WebAssembly with no imports at all, one memory with a declared maximum of at most 1 GiB, and two exports (<code>nuee_alloc</code>, <code>nuee_run</code>). Only a fixed list of WebAssembly features is accepted; relaxed SIMD, threads, memory64 and the other features that could make engines disagree are refused. A fresh instance runs each lease, with memory, time, stack and output caps. The same bytes give the same output in wasmtime, V8, SpiderMonkey and JavaScriptCore: the end-to-end tests check three golden outputs in all of them, and <code>nuee selftest</code> checks them in wasmtime.</p>
+<pre class="command"><code>nuee run demo:mandelbrot --verify full</code></pre>
+<p>Limits: modules up to 32 MiB, inline inputs and outputs up to 1 MiB (larger outputs travel as blobs), at most 32 leases per peer and 64 jobs per swarm.</p>
+
+<h3 id="job-files"><a href="#job-files">Your own module and job files</a></h3>
+<p>Any module that follows the task ABI runs with a directory of inputs, one file per task, sorted by name:</p>
+<pre class="command"><code>nuee run my-task.wasm --inputs inputs/</code></pre>
+<pre class="output"><code>2 tasks, verify Sample, 5 local slots, outputs in nuee-out/my-task
+done: 2 tasks, results in nuee-out/my-task/results.json</code></pre>
+<p>A job TOML file describes the rest: the kind and its table (<code>[wasm]</code>, <code>[wgsl]</code>, <code>[embed]</code>, <code>[llm]</code>, <code>[exec]</code>, <code>[train]</code>), <code>verify</code>, <code>deadline</code>, <code>[inputs]</code> (<code>dir</code>, or <code>jsonl</code> cut into shards of <code>lines_per_task</code>), <code>[output]</code> (<code>dir</code>, <code>merge = "concat"</code> or <code>"jsonl"</code>) and <code>[compare]</code>. Unknown fields are errors. <code>[wasm] assets</code> hands files such as a model or a dataset to every task (at most 16, each at most 64 MiB); the module receives them in a small envelope before its input. The repository’s <code>examples/skycmd/dagger.toml</code> is one:</p>
+<pre class="command"><code>nuee run examples/skycmd/dagger.toml</code></pre>
+<p>It ran 16 tasks and merged 64,000 JSONL records into one file in 50 s (debug build, coordinator alone, 5 slots). The page’s “Your own module” entry takes a <code>.wasm</code> file and input files in the same way.</p>
+
+<h3 id="gpu"><a href="#gpu">GPU shaders (WGSL)</a></h3>
+<p>A <code>wgsl</code> task is a compute shader run by wgpu natively (Metal, Vulkan, DX12) and by WebGPU in browsers. The shader is parsed and validated by naga before anything touches a device; buffers are capped at 64 MiB per binding and 128 MiB per task, and a task past its deadline loses its device.</p>
+<pre class="command"><code>nuee run demo:mandelbrot-gpu</code></pre>
+<p>The coordinator computes on its own GPU too (it printed <code>recomputing samples on the GPU Apple M5</code>); alone it finished in 5 s (debug build). Command-line workers offer their GPU only with <code>--gpu</code>:</p>
+<pre class="command"><code>nuee join - --gpu</code></pre>
+<pre class="output"><code>offering the GPU Apple M5
+joined with 5 slots
+job 0: mandelbrot-gpu</code></pre>
+<p>GPUs do not agree bit for bit. Near the edge of the set the f32 iteration is chaotic: on the demo grid the worst tile has 89 of 4,096 pixels that differ between honest backends. The demo therefore accepts two outputs when at most 50 per mille of their values differ by more than 2 iterations. In plain words, <strong>up to 5 % of a tile’s pixels can be wrong without the recomputation noticing</strong>. Fine for a fractal; your own WGSL jobs set their own tolerance in <code>[compare]</code>, and work that needs every value checked belongs in a <code>wasm</code> task.</p>
+<p>WebGPU in browsers, as of October 2026:</p>
+<table>
+  <thead><tr><th scope="col">Browser</th><th scope="col">WebGPU</th></tr></thead>
+  <tbody>
+    <tr><td>Chrome, Edge</td><td>on by default on Windows, macOS and ChromeOS since 113, Android since 121; Linux depends on version and driver</td></tr>
+    <tr><td>Safari</td><td>Safari 26 on macOS, iOS and iPadOS 26</td></tr>
+    <tr><td>Firefox</td><td>Windows since 141; version 145 only on macOS 26; version 147 on every Apple Silicon Mac; Linux only in Nightly</td></tr>
+  </tbody>
+</table>
+<p>A tab without WebGPU still joins and runs WebAssembly tasks; it just does not offer the GPU.</p>
+
+<h3 id="embeddings"><a href="#embeddings">Embeddings</a></h3>
+<p><code>nuee embed</code> turns text files into sentence vectors with all-MiniLM-L6-v2 (384 dimensions), on the CPU natively (candle, fp32) and with ONNX Runtime Web in browsers (q8). The model is pinned by revision, downloaded once from Hugging Face only, and every file is checked against its SHA-256.</p>
+<pre class="command"><code>nuee embed notes/</code></pre>
+<pre class="output"><code>2 chunks in 1 tasks
+checking the embedding model (downloaded once, about 90 MB)
+embedding locally with all-MiniLM-L6-v2 on the cpu
+1 tasks, verify Sample, 1 local slots, outputs in nuee-out/embed
+2 vectors: nuee-out/embed/vectors.f32 (nuee-out/embed/meta.jsonl)
+done: 1 tasks, results in nuee-out/embed/results.json</code></pre>
+<p>That first run took 16 s, model download included (debug build). <code>vectors.f32</code> holds one row of 384 little-endian floats per chunk; <code>meta.jsonl</code> says where each chunk comes from. The two backends do not produce the same floats: the lowest cosine measured between them on the calibration corpus was 0.97173, so results agree when their cosine is at least <strong>τ = 0.966</strong> and every row keeps an L2 norm of 1 (within 0.01). A forged vector that close to the true one would pass. On the page, “Embeddings” takes a <code>.txt</code> or <code>.jsonl</code> file.</p>
+
+<h3 id="llm"><a href="#llm">LLM option scoring</a></h3>
+<p>An <code>llm</code> job scores decision records: each record becomes one prompt, the model is never sampled, and only the scores of the option letters are kept. On the command line a worker offers a local OpenAI-compatible endpoint that returns log-probabilities (llama.cpp’s llama-server, LM Studio, vLLM):</p>
+<pre class="command"><code>nuee join - --llm http://127.0.0.1:8080</code></pre>
+<p>A browser uses Qwen3.5-0.8B (ONNX, q4, pinned and checked by SHA-256), offered only on devices that do not report less than 4 GB of memory; the first use downloads about 650 MB. The endpoint address only ever comes from the worker’s own flag, never from a job. Scores are compared after centring: same best option, and no letter further apart than 1.5 across backends (0.25 is enough for one backend). This needs a running model server, which this page’s test machine did not have; the code path is covered by tests against a mock server. The guide is <a href="https://github.com/maxgfr/nuee/blob/main/docs/GPU.md">docs/GPU.md</a>.</p>
+
+<h3 id="exec"><a href="#exec">Native commands (exec)</a></h3>
+<p>An <code>exec</code> job runs a command from one exact Git commit, for work that needs native code (MLX, CUDA). It is off by default. A worker pins a repository and full 40-character commit, then approves each exact command line and environment before it runs:</p>
+<pre class="command"><code>nuee join - --allow-exec https://github.com/maxgfr/skycmd@781d4c176b2d6e301d0eeb82c69781b356505ec0</code></pre>
+<p>On a terminal, <code>join</code> shows each command of that commit in full (argv and environment values) and asks; another command at the same commit is asked about again. A worker without a terminal runs only the commands listed in <code>--exec-approvals FILE</code>, one JSON object per line (<code>{"repo", "rev", "argv", "env"}</code>), as the prompt and the refusal note print them. Without <code>--allow-exec</code> for the job’s commit, <code>join</code> never asks. Variables that change how programs load code or which program or configuration they start (<code>LD_*</code>, <code>DYLD_*</code>, <code>*_OPTIONS</code>, <code>PYTHONPATH</code>, <code>NODE_OPTIONS</code>, <code>PATH</code>, <code>PIP_*</code>, <code>PAGER</code>, <code>SHELL</code>…; the full list is in the threat model) are always refused, and the prompt shows every value.</p>
+<p>The worker checks out that commit in a throwaway directory, checks the commit again, clears the environment, applies time limits (the checkout included) and output caps, kills the whole process group at the end, and uses <code>sandbox-exec</code> (macOS) or <code>bwrap</code> (Linux) when present, without network unless it also passed <code>--exec-network</code>. Jobs with <code>gpu = true</code> only go to workers that passed <code>--gpu</code>, one at a time. The command gets its input in <code>$NUEE_IN</code> and writes its output to <code>$NUEE_OUT</code>. <code>nuee doctor</code> reports whether a sandbox helper was found.</p>
+<p>Approving a command means trusting the commit’s code with your user’s rights; the sandbox is best effort. Browsers never run <code>exec</code>. <code>--exec-mirror URL=PATH</code> fetches the allowed repository from a local clone instead of the network (air-gapped machines, tests); the commit is checked the same way. Accepted risk: an approved command can write <code>~/.cache</code> and <code>~/Library/Caches</code> even under the sandbox, because model and kernel caches need them (Hugging Face and MLX downloads), so it can leave files there that other programs later trust.</p>
+
+<h3 id="sweeps"><a href="#sweeps">Sweeps</a></h3>
+<p><code>nuee sweep</code> runs an <code>exec</code> job file with <code>[[sweep]]</code> entries, one task per entry, each entry’s <code>args</code> appended to the command, and ranks the entries by the metrics found in their output (<code>loss</code>, <code>accuracy</code>, <code>acc</code> and others). A sweep against a small local repository, run here on the coordinator itself, which approves the sweep file’s own commands for that commit:</p>
+<pre class="command"><code>nuee sweep sweep.toml --allow-exec https://example.org/lr-demo@23e3640dc26b718e57fa29ccf5e1d26d7d7e5d5b --exec-mirror https://example.org/lr-demo=../sweeprepo</code></pre>
+<pre class="output"><code>name     status   duration  peer                acc
+lr-2e-3  ok           0.2s  local            0.9000
+lr-1e-3  ok           0.1s  local            0.8900
+lr-3e-3  ok           0.2s  local            0.8900
+3 sweep entries, outputs in nuee-out/lr-sweep</code></pre>
+<p>Each entry is a different experiment, so sweeps use <code>verify = "none"</code>. Without <code>--allow-exec</code> only peers run the entries.</p>
+
+<h3 id="storage"><a href="#storage">Files and durable storage</a></h3>
+<p><code>nuee share</code> archives files and folders, encrypts the archive with <a href="https://age-encryption.org">age</a> before it leaves the machine (file names included), and serves it until Ctrl-C:</p>
+<pre class="command"><code>nuee share report.txt photos/</code></pre>
+<pre class="output"><code>https://maxgfr.github.io/nuee/#/F/AEAX7AQR4ZTK…
+serving 304467 bytes (encrypted) until Ctrl-C</code></pre>
+<pre class="command"><code>nuee get -o dl/ -</code></pre>
+<pre class="output"><code>dl/report.txt
+dl/photos/a.jpg
+dl/photos/b.jpg
+✓ verified (BLAKE3)</code></pre>
+<p>Every byte is checked against the BLAKE3 hash while it streams in, before decryption; a mismatch ends with exit code 6. <code>get</code> refuses to overwrite a file without <code>--force</code> and refuses archive entries that would land outside the output directory. The web page opens the same links, decrypts in the tab and says “Verified: the files match the link”; it shares and downloads up to 256 MiB.</p>
+<p><code>nuee pin</code> keeps a ciphertext-only copy (it drops the key before storing anything) and prints a pin link that names this node; <code>nuee serve</code> serves every pinned item, <code>pin --list</code> and <code>pin --rm &lt;HASH&gt;</code> manage them. A file link only names the providers it was created with, so to keep a file reachable after its sharer leaves, use durable storage.</p>
+<p><strong>Durable storage</strong> needs a running coordinator (a <code>nuee run</code> that waits, or an anchor) and members that offer disk space:</p>
+<pre class="command"><code>nuee run demo:mandelbrot --local-slots 0 --wait-peers 16</code></pre>
+<pre class="command"><code>nuee join - --slots 1 --store 64MiB</code></pre>
+<pre class="command"><code>nuee share archive.bin --replicas 2 --on -</code></pre>
+<pre class="output"><code>https://maxgfr.github.io/nuee/#/F/AEA5ON4YA5NG…
+waiting for the swarm to place the copies (Ctrl-C skips the wait)
+https://maxgfr.github.io/nuee/#/F/AEBTOIQRMLDW…
+serving 301925 bytes (encrypted) until Ctrl-C</code></pre>
+<p>Hand out the second link, the durable one: its providers are the holders. Members print <code>offering 64 MiB of storage, 0 MiB in use</code> and only ever receive ciphertext; the coordinator never gets the key either. With the sharer stopped and one holder killed, this still worked:</p>
+<pre class="command"><code>nuee get '&lt;durable link&gt;' --on '&lt;swarm link&gt;' -o dl3</code></pre>
+<p>The coordinator replaces a copy whose holder has been gone for 10 minutes, and challenges each holder every hour: it asks for a few 1 KiB ranges chosen from a fresh nonce (always including the last chunk) and checks them against the BLAKE3 root. A passed challenge proves the holder could produce those ranges at that moment, not that it stores the whole file; repeated challenges make a partial copy likely to be caught over time. Repair only happens while the coordinator runs. Limits: 8 replicas per blob, 1,024 blobs and 256 members per coordinator.</p>
+<p>Only the peer that asked for a blob can release it, and each peer lists only its own; under <code>--approve</code> only peers you let in can ask, and banned peers never can. Each requester is limited to 128 tracked blobs and 64 GiB of copies, a blob that never got a first copy is dropped after 24 hours, and a member’s released or failed copies are removed from its disk (counted against its quota until then). Free room counts at most 64 GiB when picking members. A challenge proves possession of ranges, not independent copies: a member can relay ranges from another copy, and one link holder with several identities can hold every replica.</p>
+<p>Instead of full copies, a Reed-Solomon set stores <code>k</code> data shards and <code>m</code> parity shards, one per member; any <code>k</code> rebuild the file. With 4+2, two members can disappear and storage costs 1.5 times the file:</p>
+<pre class="command"><code>nuee share big.bin --erasure 4+2 --on -</code></pre>
+<p>It prints a second link, to the set; <code>nuee get</code> on it fetched the header and enough shards, rebuilt and checked the ciphertext and decrypted it, with six members and the sharer stopped. The web page also opens set links, but only asks the providers printed in the link. Tabs do not pin and do not offer storage. Guide: <a href="https://github.com/maxgfr/nuee/blob/main/docs/STORAGE.md">docs/STORAGE.md</a>.</p>
+
+<h3 id="training"><a href="#training">Training</a></h3>
+<p><code>nuee train</code> runs DiLoCo: data-parallel training where workers talk to the coordinator once per round instead of once per step. In ten lines:</p>
+<ol>
+  <li>The coordinator holds the parameters θ.</li>
+  <li>Each round, every worker receives θ.</li>
+  <li>It runs H inner steps of its own optimiser on its share of the data.</li>
+  <li>Its optimiser state stays on the worker.</li>
+  <li>It sends back Δ, its change over the round.</li>
+  <li>The coordinator drops deltas with non-finite values.</li>
+  <li>With three or more, it drops deltas pointing away from the median or much larger than it.</li>
+  <li>It averages the rest with a coordinate-wise trimmed mean (20 % at each end).</li>
+  <li>An outer step applies the average: SGD with Nesterov momentum, learning rate 0.7, momentum 0.9.</li>
+  <li>A checkpoint and <code>train.json</code> are written after every round, so a run resumes.</li>
+</ol>
+<pre class="command"><code>nuee train demo:train --wait-peers 2 --local-slots 0</code></pre>
+<pre class="output"><code>round 1/10  loss 2.068  accepted 4  rejected 0
+round 2/10  loss 1.402  accepted 4  rejected 0
+…
+round 10/10  loss 0.171  accepted 4  rejected 0
+done: 10 rounds, model in nuee-out/toy-trainer/checkpoint-10.safetensors</code></pre>
+<p>With two <code>nuee join</code> workers of two slots each, the ten rounds took 7 s (debug build). The demo is a small digit recognizer on the UCI optdigits data set; the page’s “Train together” runs it with browser tabs and shows the loss curve and the final test accuracy.</p>
+<table>
+  <thead><tr><th scope="col"></th><th scope="col">WebAssembly trainer</th><th scope="col">exec trainer</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Runs</th><td>in wasmtime and every browser engine</td><td>native code on machines that approved the exact command (MLX, CUDA)</td></tr>
+    <tr><th scope="row">Sends</th><td>Δ in f32 and the mean loss</td><td>Δ in int8 with error feedback by default (4 times smaller; <code>--codec f32</code> for raw), and the mean loss</td></tr>
+    <tr><th scope="row">Checked by</th><td>recomputation, byte for byte, like any WebAssembly task</td><td>robust aggregation only: native floats differ between machines</td></tr>
+  </tbody>
+</table>
+<p>Int8 with error feedback: per tensor, values are scaled to the int8 range, and what rounding loses is added to the worker’s next delta, so nothing is lost for good. Robust aggregation bounds what a minority can do in one round; it is weaker than recomputation, so use exec trainers with people you trust. Guide: <a href="https://github.com/maxgfr/nuee/blob/main/docs/TRAINING.md">docs/TRAINING.md</a>.</p>
+
+<h3 id="hosting"><a href="#hosting">Services and sites</a></h3>
+<p><code>nuee expose</code> puts a local TCP service behind a link; it only ever connects to <code>127.0.0.1</code> on that port, so the tunnel cannot reach anything else on your network. It warns when nothing listens yet:</p>
+<pre class="command"><code>nuee expose 18000</code></pre>
+<pre class="output"><code>https://maxgfr.github.io/nuee/#/X/AG7F53MK5YWD…
+fingerprint 🐸 🍯 🧊 🌙 🏏 🌻  (compare with the screen of whoever joins)
+nothing answers on 127.0.0.1:18000 yet (Connection refused (os error 61)); clients will be refused until it does
+exposing 127.0.0.1:18000 until Ctrl-C</code></pre>
+<pre class="command"><code>nuee connect --port 18001 -</code></pre>
+<pre class="output"><code>open http://localhost:18001
+tunnelling to the exposed service until Ctrl-C</code></pre>
+<p>Every client proves it holds the link’s secret; <code>--approve</code> asks before each new one, <code>--no-http</code> keeps raw TCP only. A console request starts with a small hello carrying the proof, checked before the request is read; connections that prove nothing are closed after 5 seconds. Opening an <code>X</code> link in the web page gives a request console: method, path, headers, JSON body. The console never renders what comes back: JSON is pretty-printed, text is shown as text, HTML as source, binary as a download.</p>
+<p>Like <code>ssh -L</code>, <code>nuee connect</code> forwards every connection made to its local port, whoever makes it: a web page you visit while it runs can reach the remote service through DNS rebinding unless the service checks the <code>Host</code> header. Use a random port, close <code>connect</code> when you are done, and make exposed services check <code>Host</code>.</p>
+<p><code>nuee site publish</code> shares a folder with an <code>index.html</code> as an encrypted <code>S</code> link, and <code>nuee site get</code> downloads it:</p>
+<pre class="command"><code>nuee site publish ./public</code></pre>
+<pre class="command"><code>nuee site get -o got -</code></pre>
+<pre class="output"><code>got/public/index.html
+✓ verified (BLAKE3)</code></pre>
+<p>The web page shows an <strong>isolated preview</strong>: the document is rebuilt without scripts, event handlers, frames or navigation, and shown in a sandboxed frame that has no script and no access to the page’s origin. A site with JavaScript previews as its static shell. Guide: <a href="https://github.com/maxgfr/nuee/blob/main/docs/HOSTING.md">docs/HOSTING.md</a>.</p>
+
+<h3 id="anchor"><a href="#anchor">The anchor</a></h3>
+<p>Nothing in Nuée needs an anchor. <code>nuee serve --anchor</code> is <code>nuee</code> on a machine that stays on: a persistent coordinator that keeps jobs across restarts, its own relay, a store member for durable copies, and an HTTP gateway for sites. Run locally with a development relay:</p>
+<pre class="command"><code>nuee serve --anchor --relay-dev --relay-bind 127.0.0.1:0 --gateway 127.0.0.1:18780</code></pre>
+<pre class="output"><code>anchor link (keep it secret: it carries the admin secret):
+https://maxgfr.github.io/nuee/#/X/AGGEAVKJMNKR…
+swarm link: https://maxgfr.github.io/nuee/#/J/AGGEAVKJMNKR…
+fingerprint ⛽ 🐍 🍳 🐧 🍼 🍅
+gateway: http://127.0.0.1:18780
+relay: http://127.0.0.1:55873</code></pre>
+<p>Hand it a job and get the results back; the job keeps running without the submitting machine:</p>
+<pre class="command"><code>nuee --relay http://127.0.0.1:55873 run demo:mandelbrot --anchor - --follow --out results</code></pre>
+<pre class="output"><code>job 1 runs on the anchor 8c405549…a9b9; it keeps running without this
+done: 257 files in results</code></pre>
+<p>A site published with <code>--on &lt;anchor link&gt;</code> is served by the gateway at <code>/s/&lt;id&gt;/</code>. That hands the anchor the decryption key, so its operator can read the site. Every gateway response carries <code>Content-Security-Policy: sandbox</code>, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: no-referrer</code> and <code>Cross-Origin-Resource-Policy: same-site</code>; <code>--gateway-scripts</code> allows scripts, still sandboxed and never same-origin. The gateway never relays a service’s <code>Set-Cookie</code>, replaces the visitor’s <code>Forwarded</code>, <code>X-Forwarded-*</code> and <code>X-Real-IP</code> headers with <code>X-Forwarded-For</code> set to the address it saw, and gives a request 10 seconds for its head and 30 more for its body. Serve the gateway on a host name of its own.</p>
+<p>In production the relay uses <code>--relay-hostname</code> and <code>--acme-contact</code> for a Let’s Encrypt certificate, which needs a real domain and ports 80 and 443; <code>--relay-token-file</code>, <code>--relay-max-conns</code> and <code>--relay-rate</code> restrict it, and <code>--allow</code> or <code>--allow-file</code> limit the swarm to listed peer ids. A browser passes a relay token in the URL, so it appears in the relay’s access logs. The repository ships a Docker Compose file and a systemd unit; setup, firewall ports, backups and upgrades are in <a href="https://github.com/maxgfr/nuee/blob/main/docs/ANCHOR.md">docs/ANCHOR.md</a>.</p>
+
+<h3 id="skycmd"><a href="#skycmd">skycmd</a></h3>
+<p><a href="https://github.com/maxgfr/skycmd">skycmd</a> trains small flight-decision models; it is the first real workload Nuée was built for.</p>
+<ul>
+  <li><strong>Evaluation</strong> (<code>demo:skycmd</code>): skycmd’s simulator compiled to WebAssembly plays four games with the s3-pico model, 4 games × 4 seeds × 10 episodes, decision threshold 0.6. The model is checked against its BLAKE3 hash before use, and results are the same bytes on every engine, so verification is exact. The page offers it as “skycmd evaluation”.</li>
+  <li><strong>DAgger records</strong> (<code>demo:skycmd-dagger</code>): the model plays, the game’s oracle labels every state it visits, and the 64,000 records are merged into one JSONL file for fine-tuning.</li>
+  <li><strong>Teacher labelling</strong> (<code>examples/skycmd/label.toml</code>): an <code>exec</code> job that scores 80,000 records in 40 shards on Macs with MLX, compared with a tolerance because MLX differs slightly between Macs.</li>
+  <li><strong>DiLoCo training of s4-micro</strong> (<code>examples/skycmd/train-s4.toml</code>): an exec trainer, 40 rounds × 500 inner steps on 4 workers.</li>
+</ul>
+<pre class="command"><code>nuee run demo:skycmd</code></pre>
+<pre class="output"><code>game      runs  mean score  completion  crashes
+dodge        4        8.65        0.72        0
+doom         4        3.20        1.00        0
+flappy       4      200.00        0.00        0
+rescue       4        3.00        1.00        0
+done: 16 tasks, results in nuee-out/skycmd/results.json</code></pre>
+<p>Measured and estimated, kept apart:</p>
+<table>
+  <thead><tr><th scope="col">Figure</th><th scope="col">Status</th></tr></thead>
+  <tbody>
+    <tr><td><code>demo:skycmd</code>, coordinator alone: 32 s</td><td>measured for this page, debug build, Apple M5</td></tr>
+    <tr><td>DAgger job file, coordinator alone with 5 slots: 50 s for 64,000 records</td><td>measured for this page, debug build, Apple M5</td></tr>
+    <tr><td>Teacher on one M5: 74,721 records in 169 minutes, 7.2 records/s</td><td>measured, from skycmd’s own logs</td></tr>
+    <tr><td>Labelling the 80,000-record queue: about 3 h on one Mac, about 45 min on four</td><td>estimate from the figure above; not run (needs MLX Macs)</td></tr>
+    <tr><td>s4-micro traffic per worker and round: 22.4 MB down, about 5.6 MB up</td><td>computed from the parameter count; not run (needs skycmd’s unmerged <code>issue-3-diloco-inner</code> branch)</td></tr>
+  </tbody>
+</table>
+<p>A source build without the <code>embed-tasks</code> feature runs the skycmd demos from a checkout of the repository; release binaries embed the module. Guide: <a href="https://github.com/maxgfr/nuee/blob/main/docs/SKYCMD.md">docs/SKYCMD.md</a>.</p>
+</section>
+
+<section aria-labelledby="security">
+<h2 id="security"><a href="#security">Security and privacy</a></h2>
+<table>
+  <thead><tr><th scope="col">Protected</th><th scope="col">How</th></tr></thead>
+  <tbody>
+    <tr><td>Contributor machines</td><td>WebAssembly with no imports, fixed feature list, memory, time and output caps that the worker enforces itself; WGSL validated before use; <code>exec</code> off unless the exact command is approved</td></tr>
+    <tr><td>Result integrity</td><td>signed results, recomputation by the coordinator, canaries, bans with retroactive redo; tolerances stated where floats differ</td></tr>
+    <tr><td>Who you are talking to</td><td>the coordinator’s key is in the link and authenticated by TLS; manifests are signed; six symbols to compare aloud</td></tr>
+    <tr><td>Content</td><td>end-to-end encrypted QUIC, also through relays; files encrypted with age before they leave; pinners, store members and relays only see ciphertext</td></tr>
+    <tr><td>The web origin</td><td>strict Content Security Policy, Trusted Types, no <code>innerHTML</code>, no CDN, nothing secret in browser storage, hosted content never rendered in the origin</td></tr>
+  </tbody>
+</table>
+<p>Not protected, by design:</p>
+<ul>
+  <li><strong>A link holder is a member.</strong> Anyone who sees a link can use what it grants.</li>
+  <li><strong>The relay operator</strong> sees IP addresses and traffic volumes, never content. The n0 relays are for development and hobby use.</li>
+  <li><strong>WebRTC</strong>, when the presenter turns it on, shows the presenter and each participant who accepts each other’s IP address. It is off by default and both the switch and the join card say so.</li>
+  <li><strong>A coordinator chooses what its workers run.</strong> A task that stays inside its limits can still use all the CPU time it was granted or return nonsense.</li>
+  <li><strong>Sybil workers.</strong> Browser identities are free, so a ban costs a cheater a reconnect; in <code>sample</code> mode a wrong result that is neither sampled nor a canary is accepted, and in <code>full</code> mode so is a wrong result two of the cheater’s identities agree on, unless it is sampled. What stops them is the coordinator’s own recompute.</li>
+  <li><strong>Tolerances</strong> are room for a dishonest worker: 5 % of a GPU fractal tile, a cosine of 0.966 for embeddings, a logit gap for LLM scores.</li>
+  <li><strong>The fingerprint</strong> has 48 bits: it resists casual collisions, not a determined search against one fingerprint.</li>
+</ul>
+<p>The full threat model, with the code that implements each mitigation, is <a href="https://github.com/maxgfr/nuee/blob/main/docs/THREAT-MODEL.md">docs/THREAT-MODEL.md</a>; the wire format is <a href="https://github.com/maxgfr/nuee/blob/main/docs/PROTOCOL.md">docs/PROTOCOL.md</a>.</p>
+<h3 id="disclosure"><a href="#disclosure">Reporting a vulnerability</a></h3>
+<p>Use GitHub private vulnerability reporting on <a href="https://github.com/maxgfr/nuee/security/advisories/new">maxgfr/nuee</a>, not a public issue. Include the affected version or commit, what an attacker needs, steps or a proof of concept, and the impact. Expect an acknowledgement within 72 hours. Only the latest release receives security fixes. Scope and details: <a href="https://github.com/maxgfr/nuee/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+</section>
+
+<section aria-labelledby="cli">
+<h2 id="cli"><a href="#cli">Command reference</a></h2>
+<p>Every verb prints or reads a link. <code>nuee &lt;verb&gt; --help</code> lists every flag; the key ones are below. A link argument accepts <code>-</code> to read it from standard input.</p>
+<h3 id="verbs"><a href="#verbs">Verbs</a></h3>
+<table class="ref">
+  <thead><tr><th scope="col">Verb</th><th scope="col">Purpose</th><th scope="col">Key flags</th></tr></thead>
+  <tbody>
+    <tr><td><code>run</code></td><td>Run a job and print the link workers join with</td><td><code>--verify full|sample|none</code>, <code>--sample</code>, <code>--canary</code>, <code>--local-slots</code>, <code>--approve</code>, <code>--wait-peers</code>, <code>--deadline</code>, <code>--out</code>, <code>--no-resume</code>, <code>--inputs</code>, <code>--qr-svg</code>, <code>--webrtc</code>, <code>--allow-exec</code>, <code>--llm</code>, <code>--anchor</code>, <code>--follow</code></td></tr>
+    <tr><td><code>join</code></td><td>Join a compute swarm as a worker</td><td><code>--slots</code>, <code>--gpu</code>, <code>--allow-exec</code>, <code>--exec-approvals</code>, <code>--exec-network</code>, <code>--exec-mirror</code>, <code>--store</code>, <code>--llm</code></td></tr>
+    <tr><td><code>share</code></td><td>Share files or folders, encrypted, until Ctrl-C</td><td><code>--replicas</code>, <code>--erasure</code>, <code>--on</code></td></tr>
+    <tr><td><code>get</code></td><td>Download a shared link</td><td><code>-o/--out</code>, <code>--force</code>, <code>--on</code></td></tr>
+    <tr><td><code>pin</code></td><td>Keep a copy of a share (ciphertext only) and serve it</td><td><code>--list</code>, <code>--rm</code></td></tr>
+    <tr><td><code>serve</code></td><td>Serve every pinned item until Ctrl-C, or run an anchor</td><td><code>--anchor</code>, <code>--store</code>, <code>--gateway</code>, <code>--gateway-scripts</code>, <code>--relay-hostname</code>, <code>--acme-contact</code>, <code>--relay-dev</code>, <code>--relay-token-file</code>, <code>--allow</code>, <code>--allow-file</code>, <code>--approve</code>, <code>--local-slots</code></td></tr>
+    <tr><td><code>train</code></td><td>Train a model across the swarm</td><td><code>--wait-peers</code>, <code>--min-workers</code>, <code>--round-timeout</code>, <code>--inner-lr</code>, <code>--codec</code>, <code>--seed</code>, <code>--deadline</code>, <code>--local-slots</code></td></tr>
+    <tr><td><code>sweep</code></td><td>Run a parameter sweep</td><td><code>--allow-exec</code>, <code>--exec-mirror</code>, <code>--local-slots</code>, <code>--wait-peers</code>, <code>--out</code></td></tr>
+    <tr><td><code>embed</code></td><td>Compute embeddings across the swarm</td><td><code>--verify</code>, <code>--sample</code>, <code>--local-slots</code>, <code>--out</code>, <code>--deadline</code></td></tr>
+    <tr><td><code>expose</code></td><td>Expose a local TCP service through a link</td><td><code>--approve</code>, <code>--no-http</code></td></tr>
+    <tr><td><code>connect</code></td><td>Connect to an exposed service</td><td><code>--port</code></td></tr>
+    <tr><td><code>site</code></td><td>Publish a static site (<code>site publish</code>) or download one (<code>site get</code>)</td><td><code>publish --on</code>, <code>get -o</code></td></tr>
+    <tr><td><code>relay</code></td><td>Run a relay server</td><td><code>--hostname</code>, <code>--acme-contact</code>, <code>--token-file</code>, <code>--max-conns</code>, <code>--rate</code>, <code>--dev</code>, <code>--bind</code></td></tr>
+    <tr><td><code>doctor</code></td><td>Check this machine’s setup: identity, data directory, relay, WebAssembly, GPU, sandbox, clock</td><td></td></tr>
+    <tr><td><code>selftest</code></td><td>Offline self-check (no key, no network, no files)</td><td></td></tr>
+    <tr><td><code>id</code></td><td>Print this node’s identity and fingerprint</td><td><code>--new</code>, <code>--force</code></td></tr>
+    <tr><td><code>completions</code></td><td>Print shell completions</td><td><code>bash</code>, <code>zsh</code>, <code>fish</code>, <code>powershell</code>, <code>elvish</code></td></tr>
+  </tbody>
+</table>
+<h3 id="global-options"><a href="#global-options">Options of every verb</a></h3>
+<table class="ref">
+  <thead><tr><th scope="col">Option</th><th scope="col">Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--json</code></td><td>NDJSON events on standard output, human text on standard error</td></tr>
+    <tr><td><code>--relay &lt;URL&gt;</code></td><td>use this relay instead of the public ones</td></tr>
+    <tr><td><code>--relay-only</code></td><td>only talk through the relay, no direct connection</td></tr>
+    <tr><td><code>--web-base &lt;URL&gt;</code></td><td>base URL that printed links point to (default <code>https://maxgfr.github.io/nuee/</code>)</td></tr>
+    <tr><td><code>--config-dir &lt;DIR&gt;</code></td><td>directory of the identity key</td></tr>
+    <tr><td><code>--data-dir &lt;DIR&gt;</code></td><td>directory of stored blobs and pins</td></tr>
+    <tr><td><code>--ephemeral</code></td><td>throwaway in-memory identity; writes nothing</td></tr>
+    <tr><td><code>-v</code>, <code>-q</code></td><td>more logs (repeat for more), less output</td></tr>
+  </tbody>
+</table>
+<p>Global options go before the verb, for example <code>nuee --relay http://127.0.0.1:55873 run demo:mandelbrot</code>; every verb also accepts them after its name.</p>
+<h3 id="exit-codes"><a href="#exit-codes">Exit codes</a></h3>
+<table class="ref">
+  <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="num">0</td><td>ok</td></tr>
+    <tr><td class="num">1</td><td>error</td></tr>
+    <tr><td class="num">2</td><td>usage (bad arguments, truncated or wrong link)</td></tr>
+    <tr><td class="num">3</td><td>network or relay unreachable</td></tr>
+    <tr><td class="num">4</td><td>verification mismatch or banned</td></tr>
+    <tr><td class="num">5</td><td>admission refused</td></tr>
+    <tr><td class="num">6</td><td>integrity failure (hash or decryption)</td></tr>
+    <tr><td class="num">7</td><td>cancelled or interrupted</td></tr>
+    <tr><td class="num">8</td><td>swarm ended by the coordinator</td></tr>
+  </tbody>
+</table>
+<h3 id="environment"><a href="#environment">Environment variables</a></h3>
+<table class="ref">
+  <thead><tr><th scope="col">Variable</th><th scope="col">Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>NUEE_CONFIG_DIR</code></td><td>identity key directory (default <code>~/.config/nuee</code>)</td></tr>
+    <tr><td><code>NUEE_DATA_DIR</code></td><td>data directory (default <code>~/.local/share/nuee</code>)</td></tr>
+    <tr><td><code>NUEE_ONLINE_TIMEOUT_MS</code></td><td>how long to wait for the relay (default 10000)</td></tr>
+    <tr><td><code>NUEE_DURABLE_ABSENT_MS</code></td><td>coordinators: replace a stored copy whose holder has been gone this long (default 600000); for drills and tests</td></tr>
+    <tr><td><code>NO_COLOR</code></td><td>disable colours</td></tr>
+  </tbody>
+</table>
+<h3 id="json"><a href="#json">NDJSON events</a></h3>
+<p>With <code>--json</code>, each line on standard output is one JSON object whose <code>event</code> field names it, for example:</p>
+<pre class="output"><code>{"event":"link","fingerprint":["🗻","🎃","💧","🎣","🍉","🥐"],"kind":"job","link":"https://maxgfr.github.io/nuee/#/J/AGG7…"}
+{"agent":"nuee-cli/0.0.0","event":"peer","id":"dfbe5bcc…c896ec","slots":5,"state":"joined"}
+{"code":7,"event":"error","message":"interrupted; 0 of 256 outputs kept in … (run again to resume)"}</code></pre>
+<table class="ref">
+  <thead><tr><th scope="col">Event</th><th scope="col">Emitted by</th><th scope="col">Fields</th></tr></thead>
+  <tbody>
+    <tr><td><code>link</code></td><td>every verb that prints a link</td><td><code>kind</code>, <code>link</code>, <code>fingerprint</code></td></tr>
+    <tr><td><code>error</code></td><td>every verb, on failure</td><td><code>code</code> (the exit code), <code>message</code></td></tr>
+    <tr><td><code>peer</code></td><td>run, train, sweep, serve</td><td><code>id</code>, <code>state</code> (joined, pending, left), <code>agent</code>, <code>slots</code></td></tr>
+    <tr><td><code>progress</code></td><td>run, serve</td><td><code>job</code>, <code>done</code>, <code>total</code>, <code>verified</code>, <code>rate</code>, <code>peers</code></td></tr>
+    <tr><td><code>task</code></td><td>run (accepted task), join (task run)</td><td><code>job</code>, <code>task</code>, <code>by</code> or <code>lease</code>, <code>ms</code>, <code>ok</code></td></tr>
+    <tr><td><code>verified</code>, <code>mismatch</code>, <code>banned</code>, <code>task_failed</code></td><td>run, train</td><td><code>job</code>, <code>task</code>, <code>peer</code> or <code>by</code>; <code>redo</code> for bans; <code>kind</code> for failures</td></tr>
+    <tr><td><code>guarantee</code></td><td>run</td><td><code>coordinator_checks: false</code>, <code>kind</code></td></tr>
+    <tr><td><code>waiting_checker</code></td><td>run, train, sweep, serve</td><td><code>job</code>, <code>waiting</code>, <code>kind</code></td></tr>
+    <tr><td><code>done</code></td><td>run, train, sweep, anchored runs</td><td>a summary of the job and where its outputs are</td></tr>
+    <tr><td><code>round</code></td><td>train</td><td><code>round</code>, <code>rounds</code>, <code>loss</code>, <code>accepted</code>, <code>rejected</code></td></tr>
+    <tr><td><code>summary</code></td><td>run of <code>demo:skycmd</code></td><td><code>game</code>, <code>runs</code>, <code>mean_score</code>, <code>completion_rate</code>, <code>crashes</code></td></tr>
+    <tr><td><code>sweep_entry</code></td><td>sweep</td><td><code>name</code>, <code>status</code>, <code>duration_ms</code>, <code>peer</code>, <code>out</code>, <code>metrics</code></td></tr>
+    <tr><td><code>coordinator</code>, <code>pending</code>, <code>welcome</code>, <code>job</code>, <code>job_rejected</code>, <code>rejoin</code>, <code>ended</code></td><td>join</td><td>the coordinator’s id and fingerprint, slots, job names, the number of tasks done</td></tr>
+    <tr><td><code>serving</code>, <code>stopped</code></td><td>share, site publish, expose, serve</td><td><code>hash</code> and <code>size</code>, or the port</td></tr>
+    <tr><td><code>placing</code>, <code>durable</code>, <code>erasure</code>, <code>replicas_refused</code></td><td>share with <code>--on</code></td><td>wait time, placed copies and holders, set id and <code>k</code>/<code>m</code>, refusal reason</td></tr>
+    <tr><td><code>file</code>, <code>verified</code></td><td>get, site get</td><td>each file’s path, then the hash, file count and bytes</td></tr>
+    <tr><td><code>pinned</code>, <code>pin</code>, <code>unpinned</code></td><td>pin</td><td>hash, size, providers, link</td></tr>
+    <tr><td><code>tunnel_open</code>, <code>tunnel_closed</code>, <code>http</code>, <code>refused</code>, <code>listening</code></td><td>expose, connect</td><td>peer, bytes, method, path, status, port</td></tr>
+    <tr><td><code>anchor</code>, <code>resumed</code>, <code>job_done</code>, <code>anchored</code></td><td>serve <code>--anchor</code>, run <code>--anchor</code></td><td>links, relay, gateway, fingerprint, job ids</td></tr>
+    <tr><td><code>relay</code></td><td>relay</td><td><code>url</code></td></tr>
+    <tr><td><code>check</code>, <code>doctor</code>, <code>selftest</code>, <code>id</code></td><td>doctor, selftest, id</td><td>each check’s name, result, detail and hint; the overall result; the id and fingerprint</td></tr>
+  </tbody>
+</table>
+</section>
+
+<section aria-labelledby="troubleshooting">
+<h2 id="troubleshooting"><a href="#troubleshooting">Troubleshooting and limits</a></h2>
+<dl class="faq">
+  <dt><code>error: relay unreachable: check your connection or pass --relay &lt;url&gt; (see `nuee relay`)</code></dt>
+  <dd>Exit code 3. No link is printed until the relay answers, within 10 seconds (<code>NUEE_ONLINE_TIMEOUT_MS</code>). Check the connection, or point at another relay with <code>--relay</code>. The page says “Cannot reach the relay. Check your connection and try again.”</dd>
+  <dt><code>error: the coordinator ended the swarm</code></dt>
+  <dd>Exit code 8 on <code>nuee join</code>: the coordinator stopped (its own run exits with 7 when interrupted, keeping finished outputs for a resume). The page says “The swarm has ended.” or, for a share whose source is gone, “This swarm or share is gone (or its host is offline).”</dd>
+  <dt><code>error: the link looks truncated; copy it again in full</code></dt>
+  <dd>Exit code 2. The link was cut while copying; the checksum at its end did not match. QR codes and <code>-</code> on standard input avoid this. A link from a newer version gives <code>link version … is not supported; update nuee</code>.</dd>
+  <dt>“This browser is too old for Nuée (WebAssembly SIMD is missing, as in Safari before 16.4).”</dt>
+  <dd>Tasks need WebAssembly SIMD. Update the browser or use another one.</dd>
+  <dt>“This browser does not run WebAssembly. On an iPhone or iPad, Lockdown Mode turns it off…”</dt>
+  <dd>Lockdown Mode disables WebAssembly. Allow the site in Lockdown Mode settings, or use another device.</dd>
+  <dt><code>… tasks wait for a second peer able to run them …</code></dt>
+  <dd>The coordinator cannot check this kind itself, and only one connected peer can run it. Join a second device that can (with <code>--allow-exec</code>, a GPU, <code>--llm</code>), or restart with <code>--verify none</code> to accept unchecked results. On the page: “1 task waits for a second device that can run this kind, to check it.”</dd>
+  <dt>No GPU tasks, or <code>--gpu: no usable GPU adapter on this machine</code></dt>
+  <dd>A command-line worker takes <code>wgsl</code> tasks only with <code>--gpu</code>, and needs a usable adapter (<code>nuee doctor</code> shows it). A tab offers its GPU only when WebGPU is available; check <code>chrome://gpu</code> or <code>about:support</code>.</dd>
+  <dt><code>error: provider unreachable (…): is the sharer still online?</code></dt>
+  <dd>Exit code 3 on <code>nuee get</code>: nobody named in the link is serving it. Ask the sharer to run <code>nuee share</code> again, or use a durable link with <code>--on &lt;swarm link&gt;</code>.</dd>
+  <dt><code>error: dl/report.txt already exists (pass --force to overwrite)</code></dt>
+  <dd><code>nuee get</code> never overwrites without <code>--force</code>.</dd>
+  <dt><code>native commands are disabled on this node (see --allow-exec)</code></dt>
+  <dd>The worker did not pin the job’s <code>repo@rev</code>; the join prompt shows both.</dd>
+  <dt><code>job N runs a native command this machine has not approved</code></dt>
+  <dd>The worker has no terminal to ask on and the command is not in its <code>--exec-approvals</code> file. The note prints the line to add; join again after adding it.</dd>
+</dl>
+<h3 id="limits"><a href="#limits">Limits, frankly</a></h3>
+<ul>
+  <li>Relay operators see browser IP addresses; WebRTC, when turned on, shows them to the presenter and participants.</li>
+  <li>The n0 public relays are for development and hobby use.</li>
+  <li>Browser keys are ephemeral, so agreement between two browser peers proves little.</li>
+  <li>Mobile tabs stop in the background.</li>
+  <li>The web page keeps files in memory: 256 MiB at most to share or download.</li>
+  <li>Native trainers are not recomputed; GPU, embedding and LLM results are compared within tolerances.</li>
+  <li>There is no Windows binary; Windows machines join through the browser.</li>
+  <li>Nuée is for groups that trust each other enough to share a link. It is not an open market.</li>
+</ul>
+</section>
+
+<section aria-labelledby="credits">
+<h2 id="credits"><a href="#credits">Licences and credits</a></h2>
+<ul>
+  <li>Nuée is free software under the MIT or Apache-2.0 licence, at your choice. The source is on <a href="https://github.com/maxgfr/nuee">GitHub</a>.</li>
+  <li>Fonts: Luciole by Laurent Bourcellier and Jonathan Fabreguettes (typographies.fr), under Creative Commons Attribution 4.0; JetBrains Mono, under the SIL Open Font License 1.1.</li>
+  <li>Train together and <code>demo:train</code> use the UCI Optical Recognition of Handwritten Digits data set (Alpaydin and Kaynak, 1998), under Creative Commons Attribution 4.0.</li>
+  <li>The skycmd evaluation uses the s3-pico model of the <a href="https://github.com/maxgfr/skycmd">skycmd</a> project, under the Apache-2.0 licence.</li>
+  <li>Browsers run the embedding and LLM models with a self-hosted copy of Transformers.js 4.3.1 (Apache-2.0) and ONNX Runtime Web (MIT). The models are sentence-transformers/all-MiniLM-L6-v2 and Qwen3.5-0.8B, downloaded from Hugging Face at pinned revisions.</li>
+  <li>Networking is <a href="https://iroh.computer">iroh</a> by n0; files are encrypted with <a href="https://age-encryption.org">age</a>.</li>
+</ul>
+</section>
+</article>
+</div>
+</main>
+<div id="status" class="visually-hidden" role="status" aria-live="polite"></div>
+<footer class="foot">
+  <p><span>Free software, MIT or Apache-2.0</span><span class="foot-sep" aria-hidden="true"> · </span><span class="foot-links"><a href="../#/about">About</a> · <a href="https://github.com/maxgfr/nuee" rel="noopener noreferrer">GitHub</a></span></p>
+</footer>
+</body>
+</html>

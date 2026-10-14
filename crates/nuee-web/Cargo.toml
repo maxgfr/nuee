@@ -1,0 +1,46 @@
+[package]
+name = "nuee-web"
+description = "Browser bindings for Nuée"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nuee-proto = { workspace = true }
+nuee-core = { workspace = true }
+nuee-net = { workspace = true }
+nuee-store = { workspace = true }
+nuee-train = { workspace = true }
+nuee-gpu = { workspace = true }
+serde = { workspace = true }
+qrcode = { workspace = true, features = ["svg"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = ["console", "Worker", "DedicatedWorkerGlobalScope", "MessageEvent", "Blob", "BlobPropertyBag", "File", "Url"] }
+serde-wasm-bindgen = { workspace = true }
+console_error_panic_hook = { workspace = true }
+iroh = { workspace = true, features = ["tls-ring"] }
+iroh-blobs = { workspace = true }
+getrandom02 = { workspace = true, features = ["js"] }
+getrandom03 = { workspace = true, features = ["wasm_js"] }
+getrandom04 = { workspace = true, features = ["wasm_js"] }
+bytes = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+
+# scripts/build-web.sh runs wasm-opt itself with the flags it needs.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[lints]
+workspace = true

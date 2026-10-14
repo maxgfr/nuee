@@ -1,0 +1,182 @@
+/* Design tokens. Every color, size and font of the page comes from here.
+   Light is a Séyès-ruled French notebook; dark is the classroom blackboard. */
+@font-face {
+  font-family: 'Luciole';
+  src: url('../fonts/Luciole-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Luciole';
+  src: url('../fonts/Luciole-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Luciole';
+  src: url('../fonts/Luciole-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Luciole';
+  src: url('../fonts/Luciole-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  --font-body: 'Luciole', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-emoji: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+
+  /* Type: a 1.2 ratio on a 16px body, line heights on the 8px ruling. */
+  --text-xs: 0.875rem; /* 14 */
+  --text-md: 1rem; /* 16 */
+  --text-lg: 1.1875rem; /* 19 */
+  --text-xl: 1.4375rem; /* 23 */
+  --text-2xl: 1.75rem; /* 28 */
+  --text-3xl: 2.125rem; /* 34 */
+  --text-hero: clamp(3rem, 9vw, 5.5rem);
+  /* Fingerprint symbols: in the page, in the presenter's margin, and in presentation mode. */
+  --text-emoji: clamp(1.75rem, 8vw, 2.5rem);
+  --text-emoji-margin: 2rem;
+  --text-emoji-present: clamp(2.5rem, 7vw, 5rem);
+  --leading: 1.5rem;
+
+  /* Spacing on the 8px ruling. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2rem;
+  --space-6: 3rem;
+  --space-7: 4rem;
+
+  --rule: 8px;
+  --rule-big: 32px;
+  --margin: 20px; /* distance from the page edge to the red margin line */
+  --gutter: 16px;
+  --header: 64px;
+  --radius-square: 2px; /* task squares, swatches, bars */
+  --radius-slip: 4px; /* the QR paper slip */
+  --radius: 6px;
+  --radius-card: 12px;
+  --target: 44px;
+  --measure: 70ch;
+  --page: 72rem;
+  --focus-width: 3px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --transition: 150ms ease-out;
+
+  /* Notebook (light). Text pairs are at least 4.5:1 on the paper, borders at least 3:1. */
+  --paper: #fbfcff;
+  --field: #ffffff;
+  --rule-minor: #e4e8f7;
+  --rule-major: #c3cbec;
+  --margin-line: #e2546b;
+  --ink: #16213d;
+  --pencil: #4b5468;
+  --border: #7c86a6;
+  --accent: #1d3b9a;
+  --accent-hover: #142c78;
+  --accent-text: #ffffff;
+  --red: #c62e3a;
+  --red-text: #ffffff;
+  --green: #1e7a4c;
+  --ochre: #8a5a00;
+  --focus: #b35c00;
+  --selection: #d6ddf7;
+  --slip-shadow: 0 1px 2px rgb(22 33 61 / 0.12), 0 6px 16px rgb(22 33 61 / 0.08);
+  --on-cover: #ffffff;
+
+  /* Notebook covers: the header band of each area. White text on each is above 4.5:1. */
+  --cover-slate: #3d4a5c;
+  --cover-blue: #1d3b9a;
+  --cover-green: #1e6b47;
+  --cover-ochre: #7a5100;
+  --cover-teal: #136b78;
+  --cover-violet: #5b3a9e;
+
+  /* Device inks, in order; red is kept for corrections. */
+  --ink-0: #1d3b9a;
+  --ink-1: #6a3fa0;
+  --ink-2: #12808f;
+  --ink-3: #1e7a4c;
+  --ink-4: #8a5a2b;
+  --ink-5: #1a1a2e;
+  --ink-6: #5c6b12; /* olive: kept well away from the correction red */
+  --ink-7: #44506b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    /* Blackboard: green-black slate, chalk white, chalk pastels. */
+    --paper: #18241f;
+    --field: #101a16;
+    --rule-minor: rgb(236 239 230 / 0.045);
+    --rule-major: rgb(236 239 230 / 0.1);
+    --margin-line: #e98b98;
+    --ink: #ecefe6;
+    --pencil: #b9c3b6;
+    --border: #8a978b;
+    --accent: #a9c6ff;
+    --accent-hover: #c9dbff;
+    --accent-text: #0d1712;
+    --red: #ff9e96;
+    --red-text: #0d1712;
+    --green: #a3e2b6;
+    --ochre: #f2d38b;
+    --focus: #ffb35c;
+    --selection: #34503f;
+    --slip-shadow: 0 1px 2px rgb(0 0 0 / 0.35), 0 6px 16px rgb(0 0 0 / 0.3);
+
+    --cover-slate: #2f3a48;
+    --cover-blue: #28407f;
+    --cover-green: #245c42;
+    --cover-ochre: #6b4a0e;
+    --cover-teal: #1f5c66;
+    --cover-violet: #4e3787;
+
+    --ink-0: #a9c6ff;
+    --ink-1: #cdb0ff;
+    --ink-2: #8ed9e0;
+    --ink-3: #a3e2b6;
+    --ink-4: #f2c48b;
+    --ink-5: #f3f1e7;
+    --ink-6: #d9e27a;
+    --ink-7: #b3bdcc;
+  }
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --margin: 48px;
+    --gutter: 24px;
+  }
+}
+@media (min-width: 64rem) {
+  :root {
+    --margin: 240px;
+    --gutter: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition: 0ms;
+  }
+}

@@ -1,0 +1,21 @@
+Luciole
+Copyright Laurent Bourcellier & Jonathan Fabreguettes (Perez), 2019-2026
+https://www.luciole-vision.com/ - typographies.fr
+
+Licence statement embedded in the font files (name table, entries 13 and 14) of
+Luciole_webfonts.zip, version 2.001, downloaded from
+https://www.luciole-vision.com/fonts/Luciole_webfonts.zip:
+
+  Ces fontes sont distribuées gratuitement sous Licence publique Creative Commons
+  Attribution 4.0 International :
+  https://creativecommons.org/licenses/by/4.0/legalcode.fr
+
+  These fonts are freely available under Creative Commons Attribution 4.0
+  International Public License:
+  https://creativecommons.org/licenses/by/4.0/legalcode
+
+  Luciole © Laurent Bourcellier & Jonathan Fabreguettes (Perez)
+
+Files in this directory from that archive, unmodified: Luciole-Regular.woff2,
+Luciole-Bold.woff2, Luciole-Italic.woff2, Luciole-BoldItalic.woff2.
+Attribution is given on the About page of the web app.

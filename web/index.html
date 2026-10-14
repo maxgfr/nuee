@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https: wss: ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*; img-src 'self' data: blob:; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types nuee-worker">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#3d4a5c" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#2f3a48" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Nuée pools the computers in a room: open a link, contribute a few cores, share a file.">
+<title>Nuée</title>
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles/tokens.css">
+<link rel="stylesheet" href="styles/app.css">
+<script type="module" src="app/main.js"></script>
+</head>
+<body>
+<a class="skip" href="#main" data-i18n="skip">Skip to content</a>
+<header class="top">
+  <a class="brand" href="#/" data-i18n-attr="aria-label:nav.home"><span>Nuée</span></a>
+  <nav data-i18n-attr="aria-label:nav.label">
+    <ul class="nav">
+      <li><a href="#/run" data-i18n="nav.run">Launch</a></li>
+      <li><a href="#/share" data-i18n="nav.share">Share</a></li>
+      <li><a href="docs/" data-i18n="nav.docs" data-i18n-attr="href:nav.docsHref">Docs</a></li>
+      <li><a href="#/about" data-i18n="nav.about">About</a></li>
+    </ul>
+  </nav>
+  <button type="button" class="lang" id="lang-toggle" lang="fr" data-i18n="lang.switch" data-i18n-attr="aria-label:lang.switchLabel" aria-label="FR — passer en français">FR</button>
+</header>
+<main id="main" tabindex="-1">
+  <noscript><p>Nuée needs JavaScript and WebAssembly. / Nuée a besoin de JavaScript et de WebAssembly.</p></noscript>
+</main>
+<div id="status" class="visually-hidden" role="status" aria-live="polite"></div>
+<footer class="foot">
+  <p><span data-i18n="foot.license">MIT OR Apache-2.0</span><span class="foot-sep" aria-hidden="true"> · </span><span class="foot-links"><a href="#/about" data-i18n="nav.about">About</a> · <a href="https://github.com/maxgfr/nuee" rel="noopener noreferrer">GitHub</a></span></p>
+</footer>
+</body>
+</html>

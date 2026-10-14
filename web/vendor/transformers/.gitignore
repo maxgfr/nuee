@@ -1,0 +1,4 @@
+*
+!.gitignore
+!VENDOR.json
+!fetch.mjs

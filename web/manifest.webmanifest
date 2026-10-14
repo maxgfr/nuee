@@ -1,0 +1,16 @@
+{
+  "name": "Nuée",
+  "short_name": "Nuée",
+  "description": "Pool the computers in a room, straight from the browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fbfcff",
+  "theme_color": "#3d4a5c",
+  "icons": [
+    { "src": "icons/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

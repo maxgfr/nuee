@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="fr" data-area="docs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https: wss: ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*; img-src 'self' data: blob:; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types nuee-worker">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#3d4a5c" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#2f3a48" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Documentation de Nuée : comment un lien devient un essaim privé de calcul et de fichiers, la page web, chaque commande nuee, la vérification, la sécurité et les limites.">
+<title>Documentation · Nuée</title>
+<link rel="canonical" href="https://maxgfr.github.io/nuee/docs/fr/">
+<link rel="alternate" hreflang="en" href="https://maxgfr.github.io/nuee/docs/">
+<link rel="alternate" hreflang="fr" href="https://maxgfr.github.io/nuee/docs/fr/">
+<link rel="alternate" hreflang="x-default" href="https://maxgfr.github.io/nuee/docs/">
+<link rel="icon" href="../../icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="stylesheet" href="../../styles/tokens.css">
+<link rel="stylesheet" href="../../styles/app.css">
+<link rel="stylesheet" href="../../styles/docs.css">
+<script type="module" src="../../app/docs.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Aller au contenu</a>
+<header class="top">
+  <a class="brand" href="../../" aria-label="Nuée, accueil"><span>Nuée</span></a>
+  <nav aria-label="Principale">
+    <ul class="nav">
+      <li><a href="../../#/run">Lancer</a></li>
+      <li><a href="../../#/share">Partager</a></li>
+      <li><a href="./" aria-current="page">Docs</a></li>
+      <li><a href="../../#/about">À propos</a></li>
+    </ul>
+  </nav>
+  <a class="lang" href="../" hreflang="en" lang="en" aria-label="EN, documentation in English">EN</a>
+</header>
+<main id="main" tabindex="-1">
+<div class="docs">
+<div class="doc-intro">
+<h1 id="doc-title">Documentation de Nuée</h1>
+<p class="lead">Nuée transforme un lien en une petite grappe privée et éphémère, faite des ordinateurs portables et des téléphones de personnes qui se font confiance. Cette page explique ce qu’elle fait, comment elle fonctionne, chaque commande, et où s’arrêtent ses garanties.</p>
+</div>
+<nav class="toc" aria-labelledby="toc-title">
+  <details class="toc-fold">
+    <summary id="toc-title">Sur cette page</summary>
+    <ol>
+      <li><a href="#what">Ce qu’est Nuée</a></li>
+      <li><a href="#quick-start">Démarrage rapide</a></li>
+      <li><a href="#how">Fonctionnement</a></li>
+      <li><a href="#modules">Ce que l’on peut faire tourner</a></li>
+      <li><a href="#security">Sécurité et vie privée</a></li>
+      <li><a href="#cli">Référence des commandes</a></li>
+      <li><a href="#troubleshooting">Dépannage et limites</a></li>
+      <li><a href="#credits">Licences et crédits</a></li>
+    </ol>
+  </details>
+</nav>
+<article class="doc" aria-labelledby="doc-title">
+
+<section aria-labelledby="what">
+<h2 id="what"><a href="#what">Ce qu’est Nuée</a></h2>
+<p>Quelqu’un lance un calcul, depuis la ligne de commande <code>nuee</code> ou depuis la page web, et obtient un lien et un QR code. Toute personne qui ouvre le lien rejoint l’essaim : un onglet de navigateur prête quelques cœurs, un <code>nuee join</code> prête une machine entière. Le calcul est découpé en tâches, les tâches sont distribuées, les résultats reviennent et sont vérifiés. Les mêmes liens transportent aussi des fichiers chiffrés, des services exposés et des sites statiques.</p>
+<p><strong>Le lien est la grappe.</strong> Il contient la clé publique du coordinateur, le relais pour le joindre et un secret de 16 octets. L’ouvrir vaut admission : pas de compte, pas d’inscription, aucun serveur à nous au milieu.</p>
+<p>Nuée s’adresse à un groupe qui se fait déjà confiance : une conférence ou un atelier où le public rejoint depuis son téléphone, une classe, un labo ou une équipe avec quelques Mac et machines Linux. Le travail type se découpe en tâches indépendantes : fractales et simulations, évaluation d’un petit modèle, plongements de phrases, balayages de paramètres, entraînement de petits modèles, et échange de fichiers.</p>
+<p>Ce que Nuée n’est pas :</p>
+<ul>
+  <li><strong>Pas un marché.</strong> Ni paiement, ni crédit, ni jeton. Personne ne loue rien à personne.</li>
+  <li><strong>Pas un moyen de faire tourner de grands modèles de langage entre pairs.</strong> Un modèle n’est jamais réparti entre appareils. Le type <code>llm</code> se contente de noter des réponses avec un petit modèle qui tient sur un seul appareil.</li>
+  <li><strong>Pas un moyen d’exécuter le code natif d’inconnus dans votre navigateur.</strong> Les navigateurs n’exécutent que des tâches WebAssembly et WebGPU, dans un bac à sable. Les commandes natives (<code>exec</code>) ne tournent que sur des machines en ligne de commande dont l’opérateur a approuvé cette commande exacte d’un commit précis.</li>
+  <li><strong>Ni anonyme, ni fait pour des inconnus.</strong> Les opérateurs de relais voient les adresses IP, et quiconque détient un lien est membre. Voir <a href="#security">Sécurité et vie privée</a>.</li>
+</ul>
+</section>
+
+<section aria-labelledby="quick-start">
+<h2 id="quick-start"><a href="#quick-start">Démarrage rapide</a></h2>
+
+<h3 id="quick-browser"><a href="#quick-browser">Dans le navigateur</a></h3>
+<p>Ouvrez <a href="../../">la page web</a>. Rien à installer.</p>
+<ol>
+  <li><strong>Lancer.</strong> Choisissez <a href="../../#/run">Lancer</a>, un calcul (fractale sur CPU ou GPU, évaluation skycmd, plongements, entraîner ensemble, ou votre propre module <code>.wasm</code>), le mode de vérification, puis Démarrer. La page affiche un lien, son QR code et six symboles. <em>Projeter en grand</em> agrandit le QR code pour un vidéoprojecteur.</li>
+  <li><strong>Rejoindre depuis un téléphone.</strong> Scannez le QR code. La carte d’adhésion dit qui demande (les six symboles), ce qui va tourner, ce qu’une tâche peut et ne peut pas faire, et propose combien de cœurs prêter, le GPU quand WebGPU est disponible, et l’option « Seulement sur secteur ». Un appui sur <em>Contribuer</em> lance la contribution ; Pause et Arrêter restent toujours accessibles.</li>
+  <li><strong>Comparer les six symboles.</strong> Ils sont dérivés de la seule clé du coordinateur. Si ceux du téléphone diffèrent de ceux de l’écran du présentateur, le lien a été remplacé en chemin : fermez la page.</li>
+  <li><strong>Regarder.</strong> La page du présentateur remplit une grille, un carré par tâche, à l’encre de chaque appareil. Un résultat rejeté est entouré de rouge dans la marge et le reste une fois refait.</li>
+</ol>
+<p>Ce qui tourne dans un onglet : les tâches WebAssembly dans un groupe de Web Workers, les shaders WGSL via WebGPU quand le navigateur le prend en charge, le modèle de plongements, et le petit modèle de notation LLM sur les appareils qui ne déclarent pas moins de 4 Go de mémoire. Ce qui ne tourne pas dans un onglet : les commandes natives <code>exec</code>, l’épinglage, l’offre de stockage, et les téléchargements au-delà de 256 Mio. Un onglet mobile s’arrête quand il passe en arrière-plan : gardez l’écran allumé pendant la contribution.</p>
+
+<h3 id="quick-cli"><a href="#quick-cli">En ligne de commande</a></h3>
+<p>La commande <code>nuee</code> tourne sous macOS et Linux. Les machines Windows rejoignent par le navigateur.</p>
+<pre class="command"><code>brew install maxgfr/tap/nuee</code></pre>
+<p>Ou compilez-la depuis une copie du dépôt (voir <a href="https://github.com/maxgfr/nuee#building-from-source">Building from source</a>) :</p>
+<pre class="command"><code>cargo build --release -p nuee</code></pre>
+<p>Vérifiez la machine. <code>selftest</code> n’a besoin ni de clé, ni de réseau, ni de fichiers :</p>
+<pre class="command"><code>nuee selftest</code></pre>
+<p>Sur une compilation depuis les sources sans la fonctionnalité <code>embed-tasks</code>, elle a affiché :</p>
+<pre class="output"><code>✓ wasm golden: 3 golden outputs match
+✓ demo modules: embedded: mandelbrot, toy-trainer, optdigits; not embedded: skycmd-arena (build with --features embed-tasks)
+✓ links: job, file and pin links round-trip
+✓ manifest: manifest signatures and admission proofs hold
+✓ encryption: age encryption round-trips and detects tampering
+✓ swarm: in-memory swarm finished 6 tasks
+selftest ok</code></pre>
+<p>Lancez la démo de fractale :</p>
+<pre class="command"><code>nuee run demo:mandelbrot</code></pre>
+<p>Elle affiche un QR code, puis le lien et l’empreinte une fois le relais joignable, et une ligne de progression pendant que les pairs travaillent. Une exécution avec un travailleur <code>nuee join</code>, sur un Apple M5 avec un relais local, a affiché (QR code, début des chemins et la plupart des lignes de progression omis) :</p>
+<pre class="output"><code>https://maxgfr.github.io/nuee/#/J/AGG7I54LT3RYDIITQGUZBA6F…
+fingerprint 🗻 🎃 💧 🎣 🍉 🥐  (compare with the screen of whoever joins)
+256 tasks, verify Sample, 5 local slots, outputs in …/nuee-out/mandelbrot
+waiting for 1 peer(s) to join
+peer joined: dfbe5bccab04…c896ec (nuee-cli/0.0.0)
+███████████████████████░░░░░░░ 197/256 tasks verified 145 · 1 peers · 1223.6/s
+image: nuee-out/mandelbrot/mandelbrot.ppm
+done: 256 tasks, results in nuee-out/mandelbrot/results.json</code></pre>
+<p>Cette exécution utilisait <code>--wait-peers 1</code> pour que le calcul attende le travailleur ; sans cette option, le coordinateur commence aussitôt avec la moitié de ses cœurs. Sur une autre machine, rejoignez avec le lien. L’argument <code>-</code> le lit sur l’entrée standard, pour qu’il ne finisse pas dans l’historique du shell :</p>
+<pre class="command"><code>nuee join -</code></pre>
+<pre class="output"><code>coordinator fingerprint 🗻 🎃 💧 🎣 🍉 🥐  (compare with the coordinator's screen)
+joined with 5 slots
+job 0: mandelbrot
+task 9 done in 43 ms (1 so far)
+…
+left the swarm after 84 tasks</code></pre>
+<p>Ou ouvrez le lien sur un téléphone : l’onglet rejoint le même essaim. Chaque verbe affiche du texte lisible ; ajoutez <code>--json</code> pour obtenir à la place un événement JSON par ligne sur la sortie standard (voir <a href="#json">Événements NDJSON</a>).</p>
+</section>
+
+<section aria-labelledby="how">
+<h2 id="how"><a href="#how">Fonctionnement</a></h2>
+
+<h3 id="network"><a href="#network">Le réseau : iroh</a></h3>
+<p>Chaque pair est un point d’accès <a href="https://iroh.computer">iroh</a> dont l’identité est une clé publique ed25519. Les connexions sont en QUIC avec TLS 1.3, et les deux extrémités s’authentifient avec leur clé : un travailleur ne parle jamais qu’à la clé de son lien. Les pairs en ligne de commande essaient d’abord un chemin UDP direct ; quand il n’y en a pas (pare-feu strict, navigateur), le trafic passe par un relais. Les navigateurs passent toujours par un relais, en WebSocket. Le relais transmet des paquets chiffrés et ne peut pas les lire.</p>
+<p>Qui voit quelle adresse IP : l’opérateur du relais voit l’adresse de chaque pair connecté, et deux pairs en ligne de commande connectés directement voient l’adresse l’un de l’autre. Les autres pairs ne voient jamais l’adresse d’un navigateur, sauf si le présentateur active les connexions directes entre navigateurs (WebRTC) : la page du présentateur et chaque participant qui accepte voient alors l’adresse de l’autre. Les relais par défaut sont opérés par n0 pour le développement et le loisir ; pour tout le reste, lancez le vôtre avec <code>nuee relay</code> ou <code>nuee serve --anchor</code>.</p>
+
+<h3 id="link"><a href="#link">Le lien est une capacité</a></h3>
+<p>Un lien ressemble à <code>https://maxgfr.github.io/nuee/#/J/AGG7…</code>. Tout ce qui suit <code>#</code> est le fragment, que les navigateurs n’envoient jamais au serveur web : GitHub Pages ne le voit jamais. La lettre dit de quel lien il s’agit :</p>
+<table>
+  <thead><tr><th scope="col">Lettre</th><th scope="col">Lien</th><th scope="col">Contenu</th></tr></thead>
+  <tbody>
+    <tr><td><code>J</code></td><td>Essaim de calcul</td><td>la clé du coordinateur, son relais, un secret de 16 octets</td></tr>
+    <tr><td><code>F</code></td><td>Fichier</td><td>jusqu’à 4 fournisseurs, le hash BLAKE3 et la taille du chiffré, un secret d’accès de 16 octets, la clé de déchiffrement age</td></tr>
+    <tr><td><code>S</code></td><td>Site statique</td><td>comme <code>F</code>, ouvert comme un site</td></tr>
+    <tr><td><code>X</code></td><td>Service exposé, ou ancre</td><td>la clé de l’hôte, son relais, un secret de 16 octets</td></tr>
+    <tr><td><code>P</code></td><td>Épingle</td><td>un lien de fichier sans la clé : de quoi garder le chiffré, pas de quoi le lire</td></tr>
+  </tbody>
+</table>
+<p>La charge utile est l’encodage base32 d’un octet de version, du corps encodé et d’une somme de contrôle BLAKE3 de 4 octets. Un lien coupé lors d’un copier-coller est signalé comme tronqué, un lien d’une version plus récente comme non pris en charge, et un lien abîmé comme corrompu : le message dit quoi faire. Quiconque détient un lien peut s’en servir : traitez-le comme un mot de passe, montrez-le dans la salle, ne le publiez pas.</p>
+
+<h3 id="admission"><a href="#admission">Admission</a></h3>
+<p>Un pair qui rejoint prouve qu’il détient le secret sans l’envoyer : il envoie un HMAC-SHA256 des clés des deux pairs, calculé avec le secret. Le coordinateur le recalcule et compare en temps constant ; comme les deux clés y figurent, la preuve ne sert à rien sur une autre connexion. Un pair a 5 secondes pour se présenter, 64 poignées de main au plus sont en cours à la fois, et cinq preuves fausses en une minute excluent un pair pendant une minute. Avec <code>--approve</code> (ou « Approuver chaque appareil avant qu’il rejoigne » sur la page), chaque pair admis attend en plus un oui ou un non, et ne lit aucun blob de l’essaim avant le oui. L’adresse de relais annoncée par un pair n’est utilisée que si c’est le relais du coordinateur ou une adresse <code>https</code> hors des plages privées, de bouclage et lien-local, comme tout relais qu’un pair désigne pour une copie stockée ; seul un lien que vous ouvrez vous-même peut viser un relais local. Un essaim accepte au plus 256 pairs.</p>
+
+<h3 id="leases"><a href="#leases">Calculs, tâches et baux</a></h3>
+<p>Le coordinateur signe un manifeste pour chaque calcul (type, hash du module, plafond de mémoire, nombre de tâches, politique de vérification, comparateur, échéance) et l’envoie à chaque pair ; les travailleurs refusent un manifeste qui n’est pas signé par la clé de leur lien. Les travailleurs disent combien de tâches ils peuvent prendre, et le coordinateur distribue des baux : une tâche, son entrée, une échéance. Un travailleur l’exécute et renvoie le résultat avec sa signature. Une tâche qui échoue (trap, mémoire épuisée, délai dépassé) est confiée à un autre pair, jusqu’à trois tentatives ; un échec n’est jamais compté comme une triche. Un bail qui dépasse son échéance est réattribué ; l’échéance est de 60 secondes par défaut, puis de trois fois la durée médiane du pair, entre 5 secondes et 10 minutes. Les résultats de plus de 1 Mio voyagent comme des blobs que le coordinateur récupère et vérifie contre leur hash. Les travailleurs appliquent leurs propres limites sur la taille du module, la mémoire, les entrées et les sorties, quoi que dise le manifeste, et gardent au plus 256 Mio de modules et de ressources entre deux baux, seulement pour les calculs qu’ils détiennent encore.</p>
+<p>Les exécutions interrompues reprennent : les résultats déjà présents dans le dossier de sortie sont conservés, et la même commande repart là où elle s’était arrêtée (<code>--no-resume</code> recommence de zéro).</p>
+
+<h3 id="verification"><a href="#verification">Vérification</a></h3>
+<p>Vérifier, c’est recalculer. Les tâches WebAssembly produisent les mêmes octets dans wasmtime, Chromium, Firefox et Safari : deux exécutions honnêtes se comparent octet par octet. Les types qui calculent en flottants sur un GPU ou avec un modèle se comparent plutôt avec une tolérance mesurée (voir <a href="#modules">Ce que l’on peut faire tourner</a>).</p>
+<table>
+  <thead><tr><th scope="col">Mode</th><th scope="col">Ce qui se passe</th></tr></thead>
+  <tbody>
+    <tr><td><code>sample</code> (par défaut)</td><td>Un résultat est accepté. Le coordinateur recalcule lui-même 10 % des résultats (<code>--sample</code>) et glisse 3 % de canaris (<code>--canary</code>) : des tâches dont il connaît déjà la réponse. Les nouvelles tâches partent dans un ordre aléatoire, le numéro de tâche ne trahit donc rien, mais un canari répète une entrée : des identités qui partagent leur état peuvent la reconnaître. Les canaris attrapent les tricheurs naïfs ; la garantie, c’est le recalcul invisible.</td></tr>
+    <tr><td><code>full</code></td><td>Chaque tâche tourne deux fois, chez deux exécutants différents, et les deux résultats doivent concorder. Deux pairs d’accord peuvent être deux identités d’un même tricheur : le coordinateur recalcule donc quand même lui-même la même part échantillonnée (<code>--sample</code>) et envoie des canaris ; une paire qui le contredit est bannie.</td></tr>
+    <tr><td><code>none</code></td><td>Le premier résultat est accepté. À réserver à des personnes et des machines de confiance.</td></tr>
+  </tbody>
+</table>
+<p>Quand deux résultats divergent, le coordinateur exécute la tâche lui-même et son résultat tranche. Alors seulement le pair malhonnête est banni, et tous ses résultats pas encore vérifiés sont recalculés (reprise rétroactive). Un résultat dont la signature ou le hash est faux bannit aussitôt son expéditeur.</p>
+<p>Le coordinateur garde ce rôle même quand il ne prend aucune tâche (<code>--local-slots 0</code>, ou « Cette page calcule aussi » décochée) : la vérification utilise sa propre capacité, distincte de sa contribution.</p>
+<p><strong>Quand le coordinateur ne sait pas exécuter le type</strong> (un calcul <code>exec</code> sans <code>--allow-exec</code>, du <code>wgsl</code> sans GPU, du <code>llm</code> sans <code>--llm</code>), personne ne peut arbitrer. Les résultats ne sont alors comparés qu’entre deux pairs, un désaccord écarte les deux, et personne n’est banni. Aucun canari n’est envoyé, puisqu’une réponse connue ne peut être qu’une réponse que le coordinateur a calculée lui-même ; les pairs d’un désaccord voient leurs autres résultats non vérifiés recalculés et ont besoin, dès lors, de deux exécutions concordantes. <code>nuee run</code> le dit avant le lien :</p>
+<pre class="output"><code>this machine cannot run these tasks, so it cannot check them: results are only compared between two peers, which one person holding the link can fake</code></pre>
+<p>Un résultat n’est jamais accepté sans contrôle pour faire avancer un tel calcul. Si aucun second pair capable d’exécuter le type n’est connecté, les tâches attendent, et le coordinateur le dit une fois :</p>
+<pre class="output"><code>2 tasks wait for a second peer able to run them: this machine cannot check Exec results and no other admitted peer can run them. Join another device with --allow-exec for this command, or restart with --verify none to accept unchecked results</code></pre>
+<p>Les clés des navigateurs sont créées à neuf pour chaque onglet : une seule personne qui détient le lien peut ouvrir de nombreux onglets, et « deux pairs différents sont d’accord » ne prouve pas grand-chose. La vraie garantie vient du recalcul par le coordinateur lui-même, d’un taux d’échantillonnage plus élevé, du mode <code>full</code> ou de <code>--approve</code>.</p>
+
+<h3 id="corrections"><a href="#corrections">Les corrections sur le tableau</a></h3>
+<p>La page du présentateur montre un carré par tâche. Un carré se remplit de l’encre de l’appareil qui l’a calculé ; une tentative échouée est en pointillés ; un résultat rejeté est entouré de rouge, et le cercle reste une fois la tâche refaite et vérifiée, avec l’encre de l’appareil honnête à l’intérieur et une petite coche rouge. La marge garde une seule note rouge avec le nombre de corrections et, derrière <em>Voir les corrections</em>, la liste : quelle tâche a divergé, quel appareil a été banni et combien de tâches ont été refaites. Le tableau des appareils montre l’empreinte de chacun, son type (navigateur ou ligne de commande), ses tâches faites et vérifiées, son état et son temps moyen.</p>
+</section>
+
+<section aria-labelledby="modules">
+<h2 id="modules"><a href="#modules">Ce que l’on peut faire tourner</a></h2>
+<p>Chaque type ci-dessous a une commande exécutée pour cette page, et ses limites. Les durées marquées « compilation de débogage » viennent d’une compilation de développement de <code>nuee</code> sur un Apple M5 avec un relais local ; une compilation de production est plus rapide.</p>
+<ul class="module-list">
+  <li><a href="#cpu">Calcul CPU vérifié (WebAssembly)</a></li>
+  <li><a href="#job-files">Votre propre module et les fichiers de calcul</a></li>
+  <li><a href="#gpu">Shaders GPU (WGSL)</a></li>
+  <li><a href="#embeddings">Plongements</a></li>
+  <li><a href="#llm">Notation d’options par LLM</a></li>
+  <li><a href="#exec">Commandes natives (exec)</a></li>
+  <li><a href="#sweeps">Balayages</a></li>
+  <li><a href="#storage">Fichiers et stockage durable</a></li>
+  <li><a href="#training">Entraînement</a></li>
+  <li><a href="#hosting">Services et sites</a></li>
+  <li><a href="#anchor">L’ancre</a></li>
+  <li><a href="#skycmd">skycmd</a></li>
+</ul>
+
+<h3 id="cpu"><a href="#cpu">Calcul CPU vérifié (WebAssembly)</a></h3>
+<p>Le type par défaut. Un module de tâche est du WebAssembly simple, sans aucun import, avec une mémoire dont le maximum déclaré est d’au plus 1 Gio, et deux exports (<code>nuee_alloc</code>, <code>nuee_run</code>). Seule une liste fixe de fonctionnalités WebAssembly est acceptée ; le SIMD relâché, les threads, memory64 et les autres fonctionnalités qui pourraient faire diverger les moteurs sont refusés. Chaque bail tourne dans une instance neuve, avec des plafonds de mémoire, de temps, de pile et de sortie. Les mêmes octets donnent le même résultat dans wasmtime, V8, SpiderMonkey et JavaScriptCore : les tests de bout en bout vérifient trois résultats de référence dans chacun, et <code>nuee selftest</code> les vérifie dans wasmtime.</p>
+<pre class="command"><code>nuee run demo:mandelbrot --verify full</code></pre>
+<p>Limites : modules jusqu’à 32 Mio, entrées et sorties en ligne jusqu’à 1 Mio (au-delà, les sorties voyagent comme des blobs), au plus 32 baux par pair et 64 calculs par essaim.</p>
+
+<h3 id="job-files"><a href="#job-files">Votre propre module et les fichiers de calcul</a></h3>
+<p>Tout module qui respecte l’ABI des tâches tourne avec un dossier d’entrées, un fichier par tâche, triés par nom :</p>
+<pre class="command"><code>nuee run my-task.wasm --inputs inputs/</code></pre>
+<pre class="output"><code>2 tasks, verify Sample, 5 local slots, outputs in nuee-out/my-task
+done: 2 tasks, results in nuee-out/my-task/results.json</code></pre>
+<p>Un fichier de calcul TOML décrit le reste : le type et sa table (<code>[wasm]</code>, <code>[wgsl]</code>, <code>[embed]</code>, <code>[llm]</code>, <code>[exec]</code>, <code>[train]</code>), <code>verify</code>, <code>deadline</code>, <code>[inputs]</code> (<code>dir</code>, ou <code>jsonl</code> découpé en lots de <code>lines_per_task</code>), <code>[output]</code> (<code>dir</code>, <code>merge = "concat"</code> ou <code>"jsonl"</code>) et <code>[compare]</code>. Un champ inconnu est une erreur. <code>[wasm] assets</code> remet des fichiers, comme un modèle ou un jeu de données, à chaque tâche (16 au plus, de 64 Mio au plus chacun) ; le module les reçoit dans une petite enveloppe avant son entrée. Le fichier <code>examples/skycmd/dagger.toml</code> du dépôt en est un :</p>
+<pre class="command"><code>nuee run examples/skycmd/dagger.toml</code></pre>
+<p>Il a exécuté 16 tâches et fusionné 64 000 enregistrements JSONL en un seul fichier en 50 s (compilation de débogage, coordinateur seul, 5 emplacements). L’entrée « Votre propre module » de la page accepte un fichier <code>.wasm</code> et des fichiers d’entrée de la même façon.</p>
+
+<h3 id="gpu"><a href="#gpu">Shaders GPU (WGSL)</a></h3>
+<p>Une tâche <code>wgsl</code> est un shader de calcul exécuté par wgpu en natif (Metal, Vulkan, DX12) et par WebGPU dans les navigateurs. Le shader est analysé et validé par naga avant de toucher un périphérique ; les tampons sont plafonnés à 64 Mio par liaison et 128 Mio par tâche, et une tâche qui dépasse son échéance perd son périphérique.</p>
+<pre class="command"><code>nuee run demo:mandelbrot-gpu</code></pre>
+<p>Le coordinateur calcule aussi sur son propre GPU (il a affiché <code>recomputing samples on the GPU Apple M5</code>) ; seul, il a terminé en 5 s (compilation de débogage). Les travailleurs en ligne de commande n’offrent leur GPU qu’avec <code>--gpu</code> :</p>
+<pre class="command"><code>nuee join - --gpu</code></pre>
+<pre class="output"><code>offering the GPU Apple M5
+joined with 5 slots
+job 0: mandelbrot-gpu</code></pre>
+<p>Les GPU ne concordent pas au bit près. Près du bord de l’ensemble, l’itération en f32 est chaotique : sur la grille de la démo, la pire tuile compte 89 pixels sur 4 096 qui diffèrent entre moteurs honnêtes. La démo accepte donc deux résultats quand au plus 50 pour mille de leurs valeurs diffèrent de plus de 2 itérations. Autrement dit, <strong>jusqu’à 5 % des pixels d’une tuile peuvent être faux sans que le recalcul s’en aperçoive</strong>. Sans importance pour une fractale ; vos propres calculs WGSL fixent leur tolérance dans <code>[compare]</code>, et un travail dont chaque valeur doit être vérifiée relève d’une tâche <code>wasm</code>.</p>
+<p>WebGPU dans les navigateurs, en octobre 2026 :</p>
+<table>
+  <thead><tr><th scope="col">Navigateur</th><th scope="col">WebGPU</th></tr></thead>
+  <tbody>
+    <tr><td>Chrome, Edge</td><td>activé par défaut sous Windows, macOS et ChromeOS depuis la 113, Android depuis la 121 ; sous Linux, selon la version et le pilote</td></tr>
+    <tr><td>Safari</td><td>Safari 26 sous macOS, iOS et iPadOS 26</td></tr>
+    <tr><td>Firefox</td><td>Windows depuis la 141 ; la 145 seulement sous macOS 26 ; la 147 sur tous les Mac Apple Silicon ; Linux seulement dans Nightly</td></tr>
+  </tbody>
+</table>
+<p>Un onglet sans WebGPU rejoint quand même et exécute les tâches WebAssembly ; il n’offre simplement pas son GPU.</p>
+
+<h3 id="embeddings"><a href="#embeddings">Plongements</a></h3>
+<p><code>nuee embed</code> transforme des fichiers texte en vecteurs de phrases avec all-MiniLM-L6-v2 (384 dimensions), sur le CPU en natif (candle, fp32) et avec ONNX Runtime Web dans les navigateurs (q8). Le modèle est épinglé à une révision, téléchargé une seule fois et uniquement depuis Hugging Face, et chaque fichier est vérifié contre son SHA-256.</p>
+<pre class="command"><code>nuee embed notes/</code></pre>
+<pre class="output"><code>2 chunks in 1 tasks
+checking the embedding model (downloaded once, about 90 MB)
+embedding locally with all-MiniLM-L6-v2 on the cpu
+1 tasks, verify Sample, 1 local slots, outputs in nuee-out/embed
+2 vectors: nuee-out/embed/vectors.f32 (nuee-out/embed/meta.jsonl)
+done: 1 tasks, results in nuee-out/embed/results.json</code></pre>
+<p>Cette première exécution a pris 16 s, téléchargement du modèle compris (compilation de débogage). <code>vectors.f32</code> contient une ligne de 384 flottants petit-boutistes par morceau ; <code>meta.jsonl</code> dit d’où vient chaque morceau. Les deux moteurs ne produisent pas les mêmes flottants : le cosinus le plus bas mesuré entre eux sur le corpus de calibration était 0,97173, donc deux résultats concordent quand leur cosinus vaut au moins <strong>τ = 0,966</strong> et que chaque ligne garde une norme L2 de 1 (à 0,01 près). Un vecteur falsifié aussi proche du vrai passerait. Sur la page, « Plongements » accepte un fichier <code>.txt</code> ou <code>.jsonl</code>.</p>
+
+<h3 id="llm"><a href="#llm">Notation d’options par LLM</a></h3>
+<p>Un calcul <code>llm</code> note des enregistrements de décision : chaque enregistrement devient une invite, le modèle n’est jamais échantillonné, et seuls les scores des lettres d’option sont gardés. En ligne de commande, un travailleur offre un point d’accès local compatible OpenAI qui renvoie des log-probabilités (llama-server de llama.cpp, LM Studio, vLLM) :</p>
+<pre class="command"><code>nuee join - --llm http://127.0.0.1:8080</code></pre>
+<p>Un navigateur utilise Qwen3.5-0.8B (ONNX, q4, épinglé et vérifié par SHA-256), proposé uniquement aux appareils qui ne déclarent pas moins de 4 Go de mémoire ; la première utilisation télécharge environ 650 Mo. L’adresse du point d’accès ne vient jamais que de l’option du travailleur lui-même, jamais d’un calcul. Les scores se comparent après centrage : même meilleure option, et aucune lettre plus éloignée que 1,5 entre moteurs (0,25 suffit pour un même moteur). Il faut un serveur de modèle en marche, que la machine de test de cette page n’avait pas ; ce chemin est couvert par des tests contre un faux serveur. Le guide est <a href="https://github.com/maxgfr/nuee/blob/main/docs/GPU.md">docs/GPU.md</a>.</p>
+
+<h3 id="exec"><a href="#exec">Commandes natives (exec)</a></h3>
+<p>Un calcul <code>exec</code> lance une commande issue d’un commit Git précis, pour un travail qui demande du code natif (MLX, CUDA). C’est désactivé par défaut. Un travailleur épingle un dépôt et un commit complet de 40 caractères, puis approuve chaque ligne de commande et environnement exacts avant leur exécution :</p>
+<pre class="command"><code>nuee join - --allow-exec https://github.com/maxgfr/skycmd@781d4c176b2d6e301d0eeb82c69781b356505ec0</code></pre>
+<p>Dans un terminal, <code>join</code> affiche chaque commande de ce commit en entier (argv et valeurs d’environnement) et demande ; une autre commande du même commit est redemandée. Un travailleur sans terminal n’exécute que les commandes listées dans <code>--exec-approvals FICHIER</code>, un objet JSON par ligne (<code>{"repo", "rev", "argv", "env"}</code>), tels que l’invite et la note de refus les affichent. Sans <code>--allow-exec</code> pour le commit du calcul, <code>join</code> ne demande jamais. Les variables qui changent la façon dont un programme charge du code, ou quel programme ou quelle configuration il lance (<code>LD_*</code>, <code>DYLD_*</code>, <code>*_OPTIONS</code>, <code>PYTHONPATH</code>, <code>NODE_OPTIONS</code>, <code>PATH</code>, <code>PIP_*</code>, <code>PAGER</code>, <code>SHELL</code>… ; la liste complète est dans le modèle de menace) sont toujours refusées, et l’invite affiche chaque valeur.</p>
+<p>Le travailleur extrait ce commit dans un dossier jetable, revérifie le commit, vide l’environnement, applique des limites de temps (extraction comprise) et des plafonds de sortie, tue tout le groupe de processus à la fin, et utilise <code>sandbox-exec</code> (macOS) ou <code>bwrap</code> (Linux) quand ils sont présents, sans réseau sauf s’il a aussi passé <code>--exec-network</code>. Les calculs avec <code>gpu = true</code> ne vont qu’aux travailleurs lancés avec <code>--gpu</code>, un à la fois. La commande reçoit son entrée dans <code>$NUEE_IN</code> et écrit son résultat dans <code>$NUEE_OUT</code>. <code>nuee doctor</code> indique si un outil de bac à sable a été trouvé.</p>
+<p>Approuver une commande, c’est confier au code du commit les droits de votre utilisateur ; le bac à sable fait au mieux. Les navigateurs n’exécutent jamais d’<code>exec</code>. <code>--exec-mirror URL=CHEMIN</code> récupère le dépôt autorisé depuis une copie locale au lieu du réseau (machines isolées, tests) ; le commit est vérifié de la même façon. Risque accepté : une commande approuvée peut écrire dans <code>~/.cache</code> et <code>~/Library/Caches</code>, même dans le bac à sable, car les caches de modèles et de noyaux en ont besoin (téléchargements Hugging Face et MLX) ; elle peut donc y laisser des fichiers auxquels d’autres programmes feront ensuite confiance.</p>
+
+<h3 id="sweeps"><a href="#sweeps">Balayages</a></h3>
+<p><code>nuee sweep</code> exécute un fichier de calcul <code>exec</code> avec des entrées <code>[[sweep]]</code>, une tâche par entrée, les <code>args</code> de chaque entrée ajoutés à la commande, et classe les entrées selon les métriques trouvées dans leur sortie (<code>loss</code>, <code>accuracy</code>, <code>acc</code> et d’autres). Un balayage sur un petit dépôt local, exécuté ici sur le coordinateur lui-même, qui approuve les commandes du fichier de balayage pour ce commit :</p>
+<pre class="command"><code>nuee sweep sweep.toml --allow-exec https://example.org/lr-demo@23e3640dc26b718e57fa29ccf5e1d26d7d7e5d5b --exec-mirror https://example.org/lr-demo=../sweeprepo</code></pre>
+<pre class="output"><code>name     status   duration  peer                acc
+lr-2e-3  ok           0.2s  local            0.9000
+lr-1e-3  ok           0.1s  local            0.8900
+lr-3e-3  ok           0.2s  local            0.8900
+3 sweep entries, outputs in nuee-out/lr-sweep</code></pre>
+<p>Chaque entrée est une expérience différente : les balayages utilisent <code>verify = "none"</code>. Sans <code>--allow-exec</code>, seuls les pairs exécutent les entrées.</p>
+
+<h3 id="storage"><a href="#storage">Fichiers et stockage durable</a></h3>
+<p><code>nuee share</code> archive des fichiers et des dossiers, chiffre l’archive avec <a href="https://age-encryption.org">age</a> avant qu’elle quitte la machine (noms de fichiers compris), et la sert jusqu’à Ctrl-C :</p>
+<pre class="command"><code>nuee share report.txt photos/</code></pre>
+<pre class="output"><code>https://maxgfr.github.io/nuee/#/F/AEAX7AQR4ZTK…
+serving 304467 bytes (encrypted) until Ctrl-C</code></pre>
+<pre class="command"><code>nuee get -o dl/ -</code></pre>
+<pre class="output"><code>dl/report.txt
+dl/photos/a.jpg
+dl/photos/b.jpg
+✓ verified (BLAKE3)</code></pre>
+<p>Chaque octet est vérifié contre le hash BLAKE3 pendant la réception, avant le déchiffrement ; une différence termine avec le code de sortie 6. <code>get</code> refuse d’écraser un fichier sans <code>--force</code> et refuse les entrées d’archive qui atterriraient hors du dossier de sortie. La page web ouvre les mêmes liens, déchiffre dans l’onglet et affiche « Vérifié : les fichiers correspondent au lien » ; elle partage et télécharge jusqu’à 256 Mio.</p>
+<p><code>nuee pin</code> garde une copie uniquement chiffrée (il retire la clé avant de stocker quoi que ce soit) et affiche un lien d’épingle qui nomme ce nœud ; <code>nuee serve</code> sert tous les éléments épinglés, <code>pin --list</code> et <code>pin --rm &lt;HASH&gt;</code> les gèrent. Un lien de fichier ne nomme que les fournisseurs avec lesquels il a été créé : pour qu’un fichier reste accessible après le départ de celui qui le partage, utilisez le stockage durable.</p>
+<p><strong>Le stockage durable</strong> demande un coordinateur en marche (un <code>nuee run</code> qui attend, ou une ancre) et des membres qui offrent de l’espace disque :</p>
+<pre class="command"><code>nuee run demo:mandelbrot --local-slots 0 --wait-peers 16</code></pre>
+<pre class="command"><code>nuee join - --slots 1 --store 64MiB</code></pre>
+<pre class="command"><code>nuee share archive.bin --replicas 2 --on -</code></pre>
+<pre class="output"><code>https://maxgfr.github.io/nuee/#/F/AEA5ON4YA5NG…
+waiting for the swarm to place the copies (Ctrl-C skips the wait)
+https://maxgfr.github.io/nuee/#/F/AEBTOIQRMLDW…
+serving 301925 bytes (encrypted) until Ctrl-C</code></pre>
+<p>Donnez le second lien, le lien durable : ses fournisseurs sont les détenteurs. Les membres affichent <code>offering 64 MiB of storage, 0 MiB in use</code> et ne reçoivent jamais que du chiffré ; le coordinateur n’a jamais la clé non plus. Partageur arrêté et un détenteur tué, ceci a quand même fonctionné :</p>
+<pre class="command"><code>nuee get '&lt;durable link&gt;' --on '&lt;swarm link&gt;' -o dl3</code></pre>
+<p>Le coordinateur remplace une copie dont le détenteur est absent depuis 10 minutes, et met chaque détenteur à l’épreuve toutes les heures : il demande quelques plages de 1 Kio choisies à partir d’un nonce neuf (dont toujours le dernier morceau) et les vérifie contre la racine BLAKE3. Une épreuve réussie prouve que le détenteur pouvait produire ces plages à ce moment-là, pas qu’il stocke tout le fichier ; des épreuves répétées rendent probable, avec le temps, la détection d’une copie partielle. La réparation n’a lieu que pendant que le coordinateur tourne. Limites : 8 copies par blob, 1 024 blobs et 256 membres par coordinateur.</p>
+<p>Seul le pair qui a demandé un blob peut le libérer, et chaque pair ne liste que les siens ; avec <code>--approve</code>, seuls les pairs que vous avez admis peuvent en demander, et jamais un pair banni. Chaque demandeur est limité à 128 blobs suivis et 64 Gio de copies, un blob qui n’a jamais obtenu de première copie est abandonné après 24 heures, et les copies libérées ou échouées d’un membre sont effacées de son disque (comptées dans son quota jusque-là). L’espace libre compte au plus 64 Gio pour choisir les membres. Une épreuve prouve la possession de plages, pas des copies indépendantes : un membre peut relayer des plages depuis une autre copie, et un détenteur du lien avec plusieurs identités peut détenir toutes les répliques.</p>
+<p>Au lieu de copies complètes, un ensemble Reed-Solomon stocke <code>k</code> morceaux de données et <code>m</code> morceaux de parité, un par membre ; n’importe quels <code>k</code> reconstituent le fichier. Avec 4+2, deux membres peuvent disparaître et le stockage coûte 1,5 fois le fichier :</p>
+<pre class="command"><code>nuee share big.bin --erasure 4+2 --on -</code></pre>
+<p>La commande affiche un second lien, vers l’ensemble ; <code>nuee get</code> sur ce lien a récupéré l’en-tête et assez de morceaux, reconstitué et vérifié le chiffré puis l’a déchiffré, avec six membres et le partageur arrêté. La page web ouvre aussi ces liens, mais n’interroge que les fournisseurs inscrits dans le lien. Les onglets n’épinglent pas et n’offrent pas de stockage. Guide : <a href="https://github.com/maxgfr/nuee/blob/main/docs/STORAGE.md">docs/STORAGE.md</a>.</p>
+
+<h3 id="training"><a href="#training">Entraînement</a></h3>
+<p><code>nuee train</code> exécute DiLoCo : un entraînement à parallélisme de données où les travailleurs parlent au coordinateur une fois par tour au lieu d’une fois par pas. En dix lignes :</p>
+<ol>
+  <li>Le coordinateur détient les paramètres θ.</li>
+  <li>À chaque tour, chaque travailleur reçoit θ.</li>
+  <li>Il fait H pas internes de son propre optimiseur sur sa part des données.</li>
+  <li>L’état de son optimiseur reste chez lui.</li>
+  <li>Il renvoie Δ, sa variation sur le tour.</li>
+  <li>Le coordinateur écarte les deltas qui contiennent des valeurs non finies.</li>
+  <li>À partir de trois, il écarte ceux qui s’éloignent de la médiane ou la dépassent nettement.</li>
+  <li>Il fait la moyenne des autres par une moyenne tronquée coordonnée par coordonnée (20 % de chaque côté).</li>
+  <li>Un pas externe applique cette moyenne : SGD avec moment de Nesterov, taux d’apprentissage 0,7, moment 0,9.</li>
+  <li>Un point de reprise et <code>train.json</code> sont écrits après chaque tour, donc une exécution reprend.</li>
+</ol>
+<pre class="command"><code>nuee train demo:train --wait-peers 2 --local-slots 0</code></pre>
+<pre class="output"><code>round 1/10  loss 2.068  accepted 4  rejected 0
+round 2/10  loss 1.402  accepted 4  rejected 0
+…
+round 10/10  loss 0.171  accepted 4  rejected 0
+done: 10 rounds, model in nuee-out/toy-trainer/checkpoint-10.safetensors</code></pre>
+<p>Avec deux travailleurs <code>nuee join</code> de deux emplacements chacun, les dix tours ont pris 7 s (compilation de débogage). La démo est un petit modèle de reconnaissance de chiffres sur le jeu de données UCI optdigits ; « Entraîner ensemble » sur la page l’exécute avec des onglets de navigateur et montre la courbe de perte et la précision finale sur les chiffres de test.</p>
+<table>
+  <thead><tr><th scope="col"></th><th scope="col">Entraîneur WebAssembly</th><th scope="col">Entraîneur exec</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Tourne</th><td>dans wasmtime et dans chaque moteur de navigateur</td><td>en code natif sur les machines qui ont approuvé la commande exacte (MLX, CUDA)</td></tr>
+    <tr><th scope="row">Envoie</th><td>Δ en f32 et la perte moyenne</td><td>Δ en int8 avec rétroaction d’erreur par défaut (4 fois plus petit ; <code>--codec f32</code> pour du brut), et la perte moyenne</td></tr>
+    <tr><th scope="row">Vérifié par</th><td>recalcul, octet par octet, comme toute tâche WebAssembly</td><td>l’agrégation robuste seulement : les flottants natifs diffèrent d’une machine à l’autre</td></tr>
+  </tbody>
+</table>
+<p>Int8 avec rétroaction d’erreur : pour chaque tenseur, les valeurs sont ramenées à l’échelle de l’int8, et ce que l’arrondi perd est ajouté au delta suivant du travailleur, si bien que rien n’est perdu pour de bon. L’agrégation robuste borne ce qu’une minorité peut faire en un tour ; c’est plus faible qu’un recalcul : réservez les entraîneurs exec à des personnes de confiance. Guide : <a href="https://github.com/maxgfr/nuee/blob/main/docs/TRAINING.md">docs/TRAINING.md</a>.</p>
+
+<h3 id="hosting"><a href="#hosting">Services et sites</a></h3>
+<p><code>nuee expose</code> place un service TCP local derrière un lien ; il ne se connecte jamais qu’à <code>127.0.0.1</code> sur ce port, donc le tunnel ne peut rien atteindre d’autre sur votre réseau. Il prévient quand rien n’écoute encore :</p>
+<pre class="command"><code>nuee expose 18000</code></pre>
+<pre class="output"><code>https://maxgfr.github.io/nuee/#/X/AG7F53MK5YWD…
+fingerprint 🐸 🍯 🧊 🌙 🏏 🌻  (compare with the screen of whoever joins)
+nothing answers on 127.0.0.1:18000 yet (Connection refused (os error 61)); clients will be refused until it does
+exposing 127.0.0.1:18000 until Ctrl-C</code></pre>
+<pre class="command"><code>nuee connect --port 18001 -</code></pre>
+<pre class="output"><code>open http://localhost:18001
+tunnelling to the exposed service until Ctrl-C</code></pre>
+<p>Chaque client prouve qu’il détient le secret du lien ; <code>--approve</code> demande avant chaque nouveau client, <code>--no-http</code> ne garde que le TCP brut. Une requête de console commence par un court message de présentation portant la preuve, vérifiée avant la lecture de la requête ; les connexions qui ne prouvent rien sont fermées après 5 secondes. Ouvrir un lien <code>X</code> dans la page web donne une console de requêtes : méthode, chemin, en-têtes, corps JSON. La console n’interprète jamais ce qui revient : le JSON est mis en forme, le texte affiché comme texte, le HTML comme source, le binaire proposé au téléchargement.</p>
+<p>Comme <code>ssh -L</code>, <code>nuee connect</code> transmet toute connexion faite à son port local, quelle qu’en soit l’origine : une page web que vous visitez pendant qu’il tourne peut atteindre le service distant par DNS rebinding, sauf si le service vérifie l’en-tête <code>Host</code>. Prenez un port au hasard, fermez <code>connect</code> quand vous avez fini, et faites vérifier <code>Host</code> aux services exposés.</p>
+<p><code>nuee site publish</code> partage un dossier qui contient un <code>index.html</code> sous forme de lien <code>S</code> chiffré, et <code>nuee site get</code> le télécharge :</p>
+<pre class="command"><code>nuee site publish ./public</code></pre>
+<pre class="command"><code>nuee site get -o got -</code></pre>
+<pre class="output"><code>got/public/index.html
+✓ verified (BLAKE3)</code></pre>
+<p>La page web affiche un <strong>aperçu isolé</strong> : le document est reconstruit sans scripts, gestionnaires d’événements, cadres ni navigation, et montré dans un cadre isolé qui n’a ni script ni accès à l’origine de la page. Un site en JavaScript s’affiche comme sa coquille statique. Guide : <a href="https://github.com/maxgfr/nuee/blob/main/docs/HOSTING.md">docs/HOSTING.md</a>.</p>
+
+<h3 id="anchor"><a href="#anchor">L’ancre</a></h3>
+<p>Rien dans Nuée n’exige d’ancre. <code>nuee serve --anchor</code>, c’est <code>nuee</code> sur une machine qui reste allumée : un coordinateur persistant qui garde les calculs d’un redémarrage à l’autre, son propre relais, un membre de stockage pour les copies durables, et une passerelle HTTP pour les sites. Lancée en local avec un relais de développement :</p>
+<pre class="command"><code>nuee serve --anchor --relay-dev --relay-bind 127.0.0.1:0 --gateway 127.0.0.1:18780</code></pre>
+<pre class="output"><code>anchor link (keep it secret: it carries the admin secret):
+https://maxgfr.github.io/nuee/#/X/AGGEAVKJMNKR…
+swarm link: https://maxgfr.github.io/nuee/#/J/AGGEAVKJMNKR…
+fingerprint ⛽ 🐍 🍳 🐧 🍼 🍅
+gateway: http://127.0.0.1:18780
+relay: http://127.0.0.1:55873</code></pre>
+<p>Confiez-lui un calcul et récupérez les résultats ; le calcul continue sans la machine qui l’a soumis :</p>
+<pre class="command"><code>nuee --relay http://127.0.0.1:55873 run demo:mandelbrot --anchor - --follow --out results</code></pre>
+<pre class="output"><code>job 1 runs on the anchor 8c405549…a9b9; it keeps running without this
+done: 257 files in results</code></pre>
+<p>Un site publié avec <code>--on &lt;lien de l’ancre&gt;</code> est servi par la passerelle à <code>/s/&lt;id&gt;/</code>. Cela remet la clé de déchiffrement à l’ancre : son opérateur peut lire le site. Chaque réponse de la passerelle porte <code>Content-Security-Policy: sandbox</code>, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: no-referrer</code> et <code>Cross-Origin-Resource-Policy: same-site</code> ; <code>--gateway-scripts</code> autorise les scripts, toujours isolés et jamais de même origine. La passerelle ne relaie jamais le <code>Set-Cookie</code> d’un service, remplace les en-têtes <code>Forwarded</code>, <code>X-Forwarded-*</code> et <code>X-Real-IP</code> du visiteur par un <code>X-Forwarded-For</code> portant l’adresse qu’elle a vue, et laisse à une requête 10 secondes pour son en-tête et 30 de plus pour son corps. Servez la passerelle sur un nom d’hôte qui lui est propre.</p>
+<p>En production, le relais utilise <code>--relay-hostname</code> et <code>--acme-contact</code> pour un certificat Let’s Encrypt, ce qui demande un vrai domaine et les ports 80 et 443 ; <code>--relay-token-file</code>, <code>--relay-max-conns</code> et <code>--relay-rate</code> le restreignent, et <code>--allow</code> ou <code>--allow-file</code> limitent l’essaim aux identifiants de pairs listés. Un navigateur passe le jeton du relais dans l’URL : il apparaît donc dans les journaux d’accès du relais. Le dépôt fournit un fichier Docker Compose et une unité systemd ; installation, ports du pare-feu, sauvegardes et mises à jour sont dans <a href="https://github.com/maxgfr/nuee/blob/main/docs/ANCHOR.md">docs/ANCHOR.md</a>.</p>
+
+<h3 id="skycmd"><a href="#skycmd">skycmd</a></h3>
+<p><a href="https://github.com/maxgfr/skycmd">skycmd</a> entraîne de petits modèles de décision de vol ; c’est la première vraie charge de travail pour laquelle Nuée a été construite.</p>
+<ul>
+  <li><strong>Évaluation</strong> (<code>demo:skycmd</code>) : le simulateur de skycmd compilé en WebAssembly joue à quatre jeux avec le modèle s3-pico, 4 jeux × 4 graines × 10 épisodes, seuil de décision 0,6. Le modèle est vérifié contre son hash BLAKE3 avant usage, et les résultats sont les mêmes octets sur chaque moteur : la vérification est exacte. La page la propose sous le nom « Évaluation skycmd ».</li>
+  <li><strong>Enregistrements DAgger</strong> (<code>demo:skycmd-dagger</code>) : le modèle joue, l’oracle du jeu étiquette chaque état visité, et les 64 000 enregistrements sont fusionnés en un seul fichier JSONL pour l’affinage.</li>
+  <li><strong>Étiquetage par un modèle enseignant</strong> (<code>examples/skycmd/label.toml</code>) : un calcul <code>exec</code> qui note 80 000 enregistrements en 40 lots sur des Mac avec MLX, comparé avec une tolérance car MLX diffère légèrement d’un Mac à l’autre.</li>
+  <li><strong>Entraînement DiLoCo de s4-micro</strong> (<code>examples/skycmd/train-s4.toml</code>) : un entraîneur exec, 40 tours × 500 pas internes sur 4 travailleurs.</li>
+</ul>
+<pre class="command"><code>nuee run demo:skycmd</code></pre>
+<pre class="output"><code>game      runs  mean score  completion  crashes
+dodge        4        8.65        0.72        0
+doom         4        3.20        1.00        0
+flappy       4      200.00        0.00        0
+rescue       4        3.00        1.00        0
+done: 16 tasks, results in nuee-out/skycmd/results.json</code></pre>
+<p>Mesuré et estimé, séparés :</p>
+<table>
+  <thead><tr><th scope="col">Chiffre</th><th scope="col">Statut</th></tr></thead>
+  <tbody>
+    <tr><td><code>demo:skycmd</code>, coordinateur seul : 32 s</td><td>mesuré pour cette page, compilation de débogage, Apple M5</td></tr>
+    <tr><td>Fichier de calcul DAgger, coordinateur seul avec 5 emplacements : 50 s pour 64 000 enregistrements</td><td>mesuré pour cette page, compilation de débogage, Apple M5</td></tr>
+    <tr><td>Enseignant sur un M5 : 74 721 enregistrements en 169 minutes, 7,2 enregistrements/s</td><td>mesuré, d’après les journaux de skycmd</td></tr>
+    <tr><td>Étiquetage de la file de 80 000 enregistrements : environ 3 h sur un Mac, environ 45 min sur quatre</td><td>estimation tirée du chiffre précédent ; non exécuté (demande des Mac avec MLX)</td></tr>
+    <tr><td>Trafic de s4-micro par travailleur et par tour : 22,4 Mo descendants, environ 5,6 Mo montants</td><td>calculé d’après le nombre de paramètres ; non exécuté (demande la branche <code>issue-3-diloco-inner</code> de skycmd, pas encore fusionnée)</td></tr>
+  </tbody>
+</table>
+<p>Une compilation depuis les sources sans la fonctionnalité <code>embed-tasks</code> exécute les démos skycmd depuis une copie du dépôt ; les binaires publiés embarquent le module. Guide : <a href="https://github.com/maxgfr/nuee/blob/main/docs/SKYCMD.md">docs/SKYCMD.md</a>.</p>
+</section>
+
+<section aria-labelledby="security">
+<h2 id="security"><a href="#security">Sécurité et vie privée</a></h2>
+<table>
+  <thead><tr><th scope="col">Protégé</th><th scope="col">Comment</th></tr></thead>
+  <tbody>
+    <tr><td>Les machines des contributeurs</td><td>WebAssembly sans imports, liste fixe de fonctionnalités, plafonds de mémoire, de temps et de sortie appliqués par le travailleur lui-même ; WGSL validé avant usage ; <code>exec</code> désactivé sauf autorisation</td></tr>
+    <tr><td>L’intégrité des résultats</td><td>résultats signés, recalcul par le coordinateur, canaris, bannissements avec reprise rétroactive ; tolérances annoncées là où les flottants diffèrent</td></tr>
+    <tr><td>À qui l’on parle</td><td>la clé du coordinateur est dans le lien et authentifiée par TLS ; les manifestes sont signés ; six symboles à comparer à voix haute</td></tr>
+    <tr><td>Le contenu</td><td>QUIC chiffré de bout en bout, y compris à travers les relais ; fichiers chiffrés avec age avant de partir ; épingleurs, membres de stockage et relais ne voient que du chiffré</td></tr>
+    <tr><td>L’origine web</td><td>politique de sécurité du contenu stricte, Trusted Types, pas d’<code>innerHTML</code>, pas de CDN, rien de secret dans le stockage du navigateur, contenu hébergé jamais rendu dans l’origine</td></tr>
+  </tbody>
+</table>
+<p>Non protégé, par conception :</p>
+<ul>
+  <li><strong>Qui détient un lien est membre.</strong> Quiconque voit un lien peut utiliser ce qu’il accorde.</li>
+  <li><strong>L’opérateur du relais</strong> voit les adresses IP et les volumes, jamais le contenu. Les relais n0 sont faits pour le développement et le loisir.</li>
+  <li><strong>WebRTC</strong>, quand le présentateur l’active, montre au présentateur et à chaque participant qui accepte l’adresse IP de l’autre. C’est désactivé par défaut, et l’interrupteur comme la carte d’adhésion le disent.</li>
+  <li><strong>Un coordinateur choisit ce que ses travailleurs exécutent.</strong> Une tâche qui reste dans ses limites peut quand même consommer tout le temps CPU accordé ou renvoyer n’importe quoi.</li>
+  <li><strong>Les travailleurs Sybil.</strong> Les identités de navigateur sont gratuites : un bannissement coûte à un tricheur une reconnexion ; en mode <code>sample</code>, un résultat faux qui n’est ni échantillonné ni un canari est accepté, et en mode <code>full</code> aussi un résultat faux sur lequel deux identités du tricheur s’accordent, s’il n’est pas échantillonné. Ce qui les arrête, c’est le recalcul du coordinateur lui-même.</li>
+  <li><strong>Les tolérances</strong> laissent de la marge à un travailleur malhonnête : 5 % d’une tuile de fractale GPU, un cosinus de 0,966 pour les plongements, un écart de logits pour les notes LLM.</li>
+  <li><strong>L’empreinte</strong> fait 48 bits : elle résiste aux collisions fortuites, pas à une recherche acharnée contre une empreinte donnée.</li>
+</ul>
+<p>Le modèle de menace complet, avec le code qui met en œuvre chaque protection, est <a href="https://github.com/maxgfr/nuee/blob/main/docs/THREAT-MODEL.md">docs/THREAT-MODEL.md</a> ; le format sur le réseau est <a href="https://github.com/maxgfr/nuee/blob/main/docs/PROTOCOL.md">docs/PROTOCOL.md</a>.</p>
+<h3 id="disclosure"><a href="#disclosure">Signaler une vulnérabilité</a></h3>
+<p>Utilisez le signalement privé de vulnérabilités de GitHub sur <a href="https://github.com/maxgfr/nuee/security/advisories/new">maxgfr/nuee</a>, pas un ticket public. Indiquez la version ou le commit concerné, ce dont un attaquant a besoin, les étapes ou une preuve de concept, et l’impact. Un accusé de réception arrive sous 72 heures. Seule la dernière version reçoit des correctifs de sécurité. Périmètre et détails : <a href="https://github.com/maxgfr/nuee/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+</section>
+
+<section aria-labelledby="cli">
+<h2 id="cli"><a href="#cli">Référence des commandes</a></h2>
+<p>Chaque verbe affiche ou lit un lien. <code>nuee &lt;verbe&gt; --help</code> liste toutes les options ; les principales sont ci-dessous. Un argument de lien accepte <code>-</code> pour le lire sur l’entrée standard.</p>
+<h3 id="verbs"><a href="#verbs">Verbes</a></h3>
+<table class="ref">
+  <thead><tr><th scope="col">Verbe</th><th scope="col">Rôle</th><th scope="col">Options principales</th></tr></thead>
+  <tbody>
+    <tr><td><code>run</code></td><td>Lancer un calcul et afficher le lien que rejoignent les travailleurs</td><td><code>--verify full|sample|none</code>, <code>--sample</code>, <code>--canary</code>, <code>--local-slots</code>, <code>--approve</code>, <code>--wait-peers</code>, <code>--deadline</code>, <code>--out</code>, <code>--no-resume</code>, <code>--inputs</code>, <code>--qr-svg</code>, <code>--webrtc</code>, <code>--allow-exec</code>, <code>--llm</code>, <code>--anchor</code>, <code>--follow</code></td></tr>
+    <tr><td><code>join</code></td><td>Rejoindre un essaim de calcul comme travailleur</td><td><code>--slots</code>, <code>--gpu</code>, <code>--allow-exec</code>, <code>--exec-approvals</code>, <code>--exec-network</code>, <code>--exec-mirror</code>, <code>--store</code>, <code>--llm</code></td></tr>
+    <tr><td><code>share</code></td><td>Partager des fichiers ou des dossiers, chiffrés, jusqu’à Ctrl-C</td><td><code>--replicas</code>, <code>--erasure</code>, <code>--on</code></td></tr>
+    <tr><td><code>get</code></td><td>Télécharger un lien partagé</td><td><code>-o/--out</code>, <code>--force</code>, <code>--on</code></td></tr>
+    <tr><td><code>pin</code></td><td>Garder une copie d’un partage (chiffrée seulement) et la servir</td><td><code>--list</code>, <code>--rm</code></td></tr>
+    <tr><td><code>serve</code></td><td>Servir tous les éléments épinglés jusqu’à Ctrl-C, ou faire tourner une ancre</td><td><code>--anchor</code>, <code>--store</code>, <code>--gateway</code>, <code>--gateway-scripts</code>, <code>--relay-hostname</code>, <code>--acme-contact</code>, <code>--relay-dev</code>, <code>--relay-token-file</code>, <code>--allow</code>, <code>--allow-file</code>, <code>--approve</code>, <code>--local-slots</code></td></tr>
+    <tr><td><code>train</code></td><td>Entraîner un modèle avec l’essaim</td><td><code>--wait-peers</code>, <code>--min-workers</code>, <code>--round-timeout</code>, <code>--inner-lr</code>, <code>--codec</code>, <code>--seed</code>, <code>--deadline</code>, <code>--local-slots</code></td></tr>
+    <tr><td><code>sweep</code></td><td>Lancer un balayage de paramètres</td><td><code>--allow-exec</code>, <code>--exec-mirror</code>, <code>--local-slots</code>, <code>--wait-peers</code>, <code>--out</code></td></tr>
+    <tr><td><code>embed</code></td><td>Calculer des plongements avec l’essaim</td><td><code>--verify</code>, <code>--sample</code>, <code>--local-slots</code>, <code>--out</code>, <code>--deadline</code></td></tr>
+    <tr><td><code>expose</code></td><td>Exposer un service TCP local par un lien</td><td><code>--approve</code>, <code>--no-http</code></td></tr>
+    <tr><td><code>connect</code></td><td>Se connecter à un service exposé</td><td><code>--port</code></td></tr>
+    <tr><td><code>site</code></td><td>Publier un site statique (<code>site publish</code>) ou en télécharger un (<code>site get</code>)</td><td><code>publish --on</code>, <code>get -o</code></td></tr>
+    <tr><td><code>relay</code></td><td>Faire tourner un serveur relais</td><td><code>--hostname</code>, <code>--acme-contact</code>, <code>--token-file</code>, <code>--max-conns</code>, <code>--rate</code>, <code>--dev</code>, <code>--bind</code></td></tr>
+    <tr><td><code>doctor</code></td><td>Vérifier l’installation de cette machine : identité, dossier de données, relais, WebAssembly, GPU, bac à sable, horloge</td><td></td></tr>
+    <tr><td><code>selftest</code></td><td>Autotest hors ligne (ni clé, ni réseau, ni fichiers)</td><td></td></tr>
+    <tr><td><code>id</code></td><td>Afficher l’identité de ce nœud et son empreinte</td><td><code>--new</code>, <code>--force</code></td></tr>
+    <tr><td><code>completions</code></td><td>Afficher les complétions du shell</td><td><code>bash</code>, <code>zsh</code>, <code>fish</code>, <code>powershell</code>, <code>elvish</code></td></tr>
+  </tbody>
+</table>
+<h3 id="global-options"><a href="#global-options">Options de tous les verbes</a></h3>
+<table class="ref">
+  <thead><tr><th scope="col">Option</th><th scope="col">Effet</th></tr></thead>
+  <tbody>
+    <tr><td><code>--json</code></td><td>événements NDJSON sur la sortie standard, texte lisible sur la sortie d’erreur</td></tr>
+    <tr><td><code>--relay &lt;URL&gt;</code></td><td>utiliser ce relais au lieu des relais publics</td></tr>
+    <tr><td><code>--relay-only</code></td><td>ne passer que par le relais, sans connexion directe</td></tr>
+    <tr><td><code>--web-base &lt;URL&gt;</code></td><td>URL de base vers laquelle pointent les liens affichés (par défaut <code>https://maxgfr.github.io/nuee/</code>)</td></tr>
+    <tr><td><code>--config-dir &lt;DIR&gt;</code></td><td>dossier de la clé d’identité</td></tr>
+    <tr><td><code>--data-dir &lt;DIR&gt;</code></td><td>dossier des blobs stockés et des épingles</td></tr>
+    <tr><td><code>--ephemeral</code></td><td>identité jetable en mémoire ; n’écrit rien</td></tr>
+    <tr><td><code>-v</code>, <code>-q</code></td><td>plus de journaux (à répéter pour plus encore), moins de sortie</td></tr>
+  </tbody>
+</table>
+<p>Les options globales se placent avant le verbe, par exemple <code>nuee --relay http://127.0.0.1:55873 run demo:mandelbrot</code> ; chaque verbe les accepte aussi après son nom.</p>
+<h3 id="exit-codes"><a href="#exit-codes">Codes de sortie</a></h3>
+<table class="ref">
+  <thead><tr><th scope="col">Code</th><th scope="col">Signification</th></tr></thead>
+  <tbody>
+    <tr><td class="num">0</td><td>succès</td></tr>
+    <tr><td class="num">1</td><td>erreur</td></tr>
+    <tr><td class="num">2</td><td>usage (arguments invalides, lien tronqué ou d’un autre type)</td></tr>
+    <tr><td class="num">3</td><td>réseau ou relais injoignable</td></tr>
+    <tr><td class="num">4</td><td>vérification en échec ou banni</td></tr>
+    <tr><td class="num">5</td><td>admission refusée</td></tr>
+    <tr><td class="num">6</td><td>échec d’intégrité (hash ou déchiffrement)</td></tr>
+    <tr><td class="num">7</td><td>annulé ou interrompu</td></tr>
+    <tr><td class="num">8</td><td>essaim terminé par le coordinateur</td></tr>
+  </tbody>
+</table>
+<h3 id="environment"><a href="#environment">Variables d’environnement</a></h3>
+<table class="ref">
+  <thead><tr><th scope="col">Variable</th><th scope="col">Effet</th></tr></thead>
+  <tbody>
+    <tr><td><code>NUEE_CONFIG_DIR</code></td><td>dossier de la clé d’identité (par défaut <code>~/.config/nuee</code>)</td></tr>
+    <tr><td><code>NUEE_DATA_DIR</code></td><td>dossier de données (par défaut <code>~/.local/share/nuee</code>)</td></tr>
+    <tr><td><code>NUEE_ONLINE_TIMEOUT_MS</code></td><td>durée d’attente du relais (par défaut 10000)</td></tr>
+    <tr><td><code>NUEE_DURABLE_ABSENT_MS</code></td><td>coordinateurs : remplacer une copie dont le détenteur est absent depuis ce délai (par défaut 600000) ; pour les exercices et les tests</td></tr>
+    <tr><td><code>NO_COLOR</code></td><td>désactiver les couleurs</td></tr>
+  </tbody>
+</table>
+<h3 id="json"><a href="#json">Événements NDJSON</a></h3>
+<p>Avec <code>--json</code>, chaque ligne de la sortie standard est un objet JSON dont le champ <code>event</code> donne le nom, par exemple :</p>
+<pre class="output"><code>{"event":"link","fingerprint":["🗻","🎃","💧","🎣","🍉","🥐"],"kind":"job","link":"https://maxgfr.github.io/nuee/#/J/AGG7…"}
+{"agent":"nuee-cli/0.0.0","event":"peer","id":"dfbe5bcc…c896ec","slots":5,"state":"joined"}
+{"code":7,"event":"error","message":"interrupted; 0 of 256 outputs kept in … (run again to resume)"}</code></pre>
+<table class="ref">
+  <thead><tr><th scope="col">Événement</th><th scope="col">Émis par</th><th scope="col">Champs</th></tr></thead>
+  <tbody>
+    <tr><td><code>link</code></td><td>tout verbe qui affiche un lien</td><td><code>kind</code>, <code>link</code>, <code>fingerprint</code></td></tr>
+    <tr><td><code>error</code></td><td>tout verbe, en cas d’échec</td><td><code>code</code> (le code de sortie), <code>message</code></td></tr>
+    <tr><td><code>peer</code></td><td>run, train, sweep, serve</td><td><code>id</code>, <code>state</code> (joined, pending, left), <code>agent</code>, <code>slots</code></td></tr>
+    <tr><td><code>progress</code></td><td>run, serve</td><td><code>job</code>, <code>done</code>, <code>total</code>, <code>verified</code>, <code>rate</code>, <code>peers</code></td></tr>
+    <tr><td><code>task</code></td><td>run (tâche acceptée), join (tâche exécutée)</td><td><code>job</code>, <code>task</code>, <code>by</code> ou <code>lease</code>, <code>ms</code>, <code>ok</code></td></tr>
+    <tr><td><code>verified</code>, <code>mismatch</code>, <code>banned</code>, <code>task_failed</code></td><td>run, train</td><td><code>job</code>, <code>task</code>, <code>peer</code> ou <code>by</code> ; <code>redo</code> pour les bannissements ; <code>kind</code> pour les échecs</td></tr>
+    <tr><td><code>guarantee</code></td><td>run</td><td><code>coordinator_checks: false</code>, <code>kind</code></td></tr>
+    <tr><td><code>waiting_checker</code></td><td>run, train, sweep, serve</td><td><code>job</code>, <code>waiting</code>, <code>kind</code></td></tr>
+    <tr><td><code>done</code></td><td>run, train, sweep, exécutions confiées à une ancre</td><td>un résumé du calcul et l’emplacement de ses résultats</td></tr>
+    <tr><td><code>round</code></td><td>train</td><td><code>round</code>, <code>rounds</code>, <code>loss</code>, <code>accepted</code>, <code>rejected</code></td></tr>
+    <tr><td><code>summary</code></td><td>run de <code>demo:skycmd</code></td><td><code>game</code>, <code>runs</code>, <code>mean_score</code>, <code>completion_rate</code>, <code>crashes</code></td></tr>
+    <tr><td><code>sweep_entry</code></td><td>sweep</td><td><code>name</code>, <code>status</code>, <code>duration_ms</code>, <code>peer</code>, <code>out</code>, <code>metrics</code></td></tr>
+    <tr><td><code>coordinator</code>, <code>pending</code>, <code>welcome</code>, <code>job</code>, <code>job_rejected</code>, <code>rejoin</code>, <code>ended</code></td><td>join</td><td>l’identifiant et l’empreinte du coordinateur, les emplacements, les noms des calculs, le nombre de tâches faites</td></tr>
+    <tr><td><code>serving</code>, <code>stopped</code></td><td>share, site publish, expose, serve</td><td><code>hash</code> et <code>size</code>, ou le port</td></tr>
+    <tr><td><code>placing</code>, <code>durable</code>, <code>erasure</code>, <code>replicas_refused</code></td><td>share avec <code>--on</code></td><td>temps d’attente, copies placées et détenteurs, identifiant de l’ensemble et <code>k</code>/<code>m</code>, motif du refus</td></tr>
+    <tr><td><code>file</code>, <code>verified</code></td><td>get, site get</td><td>le chemin de chaque fichier, puis le hash, le nombre de fichiers et d’octets</td></tr>
+    <tr><td><code>pinned</code>, <code>pin</code>, <code>unpinned</code></td><td>pin</td><td>hash, taille, fournisseurs, lien</td></tr>
+    <tr><td><code>tunnel_open</code>, <code>tunnel_closed</code>, <code>http</code>, <code>refused</code>, <code>listening</code></td><td>expose, connect</td><td>pair, octets, méthode, chemin, statut, port</td></tr>
+    <tr><td><code>anchor</code>, <code>resumed</code>, <code>job_done</code>, <code>anchored</code></td><td>serve <code>--anchor</code>, run <code>--anchor</code></td><td>liens, relais, passerelle, empreinte, identifiants de calcul</td></tr>
+    <tr><td><code>relay</code></td><td>relay</td><td><code>url</code></td></tr>
+    <tr><td><code>check</code>, <code>doctor</code>, <code>selftest</code>, <code>id</code></td><td>doctor, selftest, id</td><td>nom, résultat, détail et conseil de chaque vérification ; le résultat global ; l’identifiant et l’empreinte</td></tr>
+  </tbody>
+</table>
+</section>
+
+<section aria-labelledby="troubleshooting">
+<h2 id="troubleshooting"><a href="#troubleshooting">Dépannage et limites</a></h2>
+<dl class="faq">
+  <dt><code>error: relay unreachable: check your connection or pass --relay &lt;url&gt; (see `nuee relay`)</code></dt>
+  <dd>Code de sortie 3. Aucun lien n’est affiché tant que le relais ne répond pas, dans un délai de 10 secondes (<code>NUEE_ONLINE_TIMEOUT_MS</code>). Vérifiez la connexion, ou indiquez un autre relais avec <code>--relay</code>. La page dit « Impossible de joindre le relais. Vérifiez votre connexion et réessayez. »</dd>
+  <dt><code>error: the coordinator ended the swarm</code></dt>
+  <dd>Code de sortie 8 pour <code>nuee join</code> : le coordinateur s’est arrêté (son propre run sort avec 7 quand il est interrompu, en gardant les résultats terminés pour une reprise). La page dit « L’essaim est terminé. » ou, pour un partage dont la source a disparu, « Cet essaim ou ce partage n’existe plus (ou son hôte est hors ligne). »</dd>
+  <dt><code>error: the link looks truncated; copy it again in full</code></dt>
+  <dd>Code de sortie 2. Le lien a été coupé lors d’un copier-coller ; la somme de contrôle à sa fin ne correspondait pas. Les QR codes et <code>-</code> sur l’entrée standard évitent ce problème. Un lien d’une version plus récente donne <code>link version … is not supported; update nuee</code>.</dd>
+  <dt>« Ce navigateur est trop ancien pour Nuée (il manque le SIMD de WebAssembly, comme dans Safari avant 16.4). »</dt>
+  <dd>Les tâches ont besoin du SIMD de WebAssembly. Mettez le navigateur à jour ou utilisez-en un autre.</dd>
+  <dt>« Ce navigateur n’exécute pas WebAssembly. Sur iPhone ou iPad, le mode Isolement le désactive… »</dt>
+  <dd>Le mode Isolement désactive WebAssembly. Autorisez le site dans les réglages du mode Isolement, ou utilisez un autre appareil.</dd>
+  <dt><code>… tasks wait for a second peer able to run them …</code></dt>
+  <dd>Le coordinateur ne peut pas vérifier ce type lui-même, et un seul pair connecté sait l’exécuter. Faites rejoindre un second appareil qui le peut (avec <code>--allow-exec</code>, un GPU, <code>--llm</code>), ou relancez avec <code>--verify none</code> pour accepter des résultats non vérifiés. Sur la page : « 1 tâche attend un second appareil capable de l’exécuter, pour la vérifier. »</dd>
+  <dt>Pas de tâches GPU, ou <code>--gpu: no usable GPU adapter on this machine</code></dt>
+  <dd>Un travailleur en ligne de commande ne prend des tâches <code>wgsl</code> qu’avec <code>--gpu</code>, et il lui faut un adaptateur utilisable (<code>nuee doctor</code> l’affiche). Un onglet n’offre son GPU que si WebGPU est disponible ; regardez <code>chrome://gpu</code> ou <code>about:support</code>.</dd>
+  <dt><code>error: provider unreachable (…): is the sharer still online?</code></dt>
+  <dd>Code de sortie 3 pour <code>nuee get</code> : aucun des fournisseurs nommés dans le lien ne le sert. Demandez au partageur de relancer <code>nuee share</code>, ou utilisez un lien durable avec <code>--on &lt;lien de l’essaim&gt;</code>.</dd>
+  <dt><code>error: dl/report.txt already exists (pass --force to overwrite)</code></dt>
+  <dd><code>nuee get</code> n’écrase jamais rien sans <code>--force</code>.</dd>
+  <dt><code>native commands are disabled on this node (see --allow-exec)</code></dt>
+  <dd>Le travailleur n’a pas épinglé le <code>repo@rev</code> du calcul ; l’invite de <code>join</code> affiche les deux.</dd>
+  <dt><code>job N runs a native command this machine has not approved</code></dt>
+  <dd>Le travailleur n’a pas de terminal pour demander et la commande n’est pas dans son fichier <code>--exec-approvals</code>. La note affiche la ligne à ajouter ; rejoignez après l’avoir ajoutée.</dd>
+</dl>
+<h3 id="limits"><a href="#limits">Les limites, franchement</a></h3>
+<ul>
+  <li>Les opérateurs de relais voient les adresses IP des navigateurs ; WebRTC, quand il est activé, les montre au présentateur et aux participants.</li>
+  <li>Les relais publics de n0 sont faits pour le développement et le loisir.</li>
+  <li>Les clés des navigateurs sont éphémères : l’accord entre deux pairs navigateurs ne prouve pas grand-chose.</li>
+  <li>Les onglets mobiles s’arrêtent en arrière-plan.</li>
+  <li>La page web garde les fichiers en mémoire : 256 Mio au plus à partager ou à télécharger.</li>
+  <li>Les entraîneurs natifs ne sont pas recalculés ; les résultats GPU, de plongements et LLM sont comparés avec des tolérances.</li>
+  <li>Il n’y a pas de binaire Windows ; les machines Windows rejoignent par le navigateur.</li>
+  <li>Nuée s’adresse à des groupes qui se font assez confiance pour partager un lien. Ce n’est pas un marché ouvert.</li>
+</ul>
+</section>
+
+<section aria-labelledby="credits">
+<h2 id="credits"><a href="#credits">Licences et crédits</a></h2>
+<ul>
+  <li>Nuée est un logiciel libre sous licence MIT ou Apache-2.0, au choix. Le code source est sur <a href="https://github.com/maxgfr/nuee">GitHub</a>.</li>
+  <li>Polices : Luciole de Laurent Bourcellier et Jonathan Fabreguettes (typographies.fr), sous licence Creative Commons Attribution 4.0 ; JetBrains Mono, sous SIL Open Font License 1.1.</li>
+  <li>Entraîner ensemble et <code>demo:train</code> utilisent le jeu de données UCI Optical Recognition of Handwritten Digits (Alpaydin et Kaynak, 1998), sous licence Creative Commons Attribution 4.0.</li>
+  <li>L’évaluation skycmd utilise le modèle s3-pico du projet <a href="https://github.com/maxgfr/skycmd">skycmd</a>, sous licence Apache-2.0.</li>
+  <li>Les navigateurs exécutent les modèles de plongements et de LLM avec une copie auto-hébergée de Transformers.js 4.3.1 (Apache-2.0) et d’ONNX Runtime Web (MIT). Les modèles sont sentence-transformers/all-MiniLM-L6-v2 et Qwen3.5-0.8B, téléchargés depuis Hugging Face à des révisions épinglées.</li>
+  <li>Le réseau repose sur <a href="https://iroh.computer">iroh</a> de n0 ; les fichiers sont chiffrés avec <a href="https://age-encryption.org">age</a>.</li>
+</ul>
+</section>
+</article>
+</div>
+</main>
+<div id="status" class="visually-hidden" role="status" aria-live="polite"></div>
+<footer class="foot">
+  <p><span>Logiciel libre, MIT ou Apache-2.0</span><span class="foot-sep" aria-hidden="true"> · </span><span class="foot-links"><a href="../../#/about">À propos</a> · <a href="https://github.com/maxgfr/nuee" rel="noopener noreferrer">GitHub</a></span></p>
+</footer>
+</body>
+</html>

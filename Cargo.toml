@@ -1,0 +1,111 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+exclude = ["tasks", "fuzz"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/maxgfr/nuee"
+homepage = "https://maxgfr.github.io/nuee/"
+authors = ["Maxime (maxgfr)"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.dependencies]
+nuee-proto = { path = "crates/nuee-proto" }
+nuee-core = { path = "crates/nuee-core" }
+nuee-net = { path = "crates/nuee-net" }
+nuee-exec = { path = "crates/nuee-exec" }
+nuee-gpu = { path = "crates/nuee-gpu", default-features = false }
+nuee-store = { path = "crates/nuee-store" }
+nuee-train = { path = "crates/nuee-train" }
+nuee-host = { path = "crates/nuee-host" }
+
+# Network
+iroh = { version = "1.3.0", default-features = false }
+iroh-base = { version = "1.3.0", default-features = false }
+iroh-relay = { version = "1.3.0", default-features = false }
+iroh-blobs = { version = "0.103.1", default-features = false }
+bao-tree = { version = "0.16.1", default-features = false }
+n0-future = "0.3.2"
+n0-watcher = "1"
+tokio = { version = "1.53", default-features = false }
+bytes = "1"
+futures-util = { version = "0.3", default-features = false }
+futures-lite = "2"
+hyper = { version = "1", default-features = false }
+hyper-util = { version = "0.1", default-features = false }
+http-body-util = "0.1"
+reqwest = { version = "0.13", default-features = false }
+rustls = { version = "0.23", default-features = false }
+
+# Encoding, crypto
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+postcard = { version = "1.1.3", default-features = false }
+blake3 = { version = "1.8", default-features = false }
+hmac = "0.12"
+sha2 = { version = "0.10", default-features = false }
+subtle = { version = "2", default-features = false }
+data-encoding = "2"
+toml = { version = "1", default-features = false }
+age = { version = "0.12.1", default-features = false }
+tar = { version = "0.4", default-features = false }
+reed-solomon-simd = "3.1"
+rand = { version = "0.9", default-features = false }
+getrandom02 = { package = "getrandom", version = "0.2" }
+getrandom03 = { package = "getrandom", version = "0.3" }
+getrandom04 = { package = "getrandom", version = "0.4" }
+
+# Execution, compute
+wasmparser = { version = "0.261", default-features = false }
+wasmtime = { version = "=49.0.2", default-features = false }
+wat = "1"
+nix = { version = "0.31", default-features = false }
+wgpu = "30"
+naga = "30"
+candle-core = "0.11"
+candle-nn = "0.11"
+candle-transformers = "0.11"
+tokenizers = { version = "0.23", default-features = false }
+safetensors = "0.8"
+
+# Web
+wasm-bindgen = "=0.2.128"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = "0.3"
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+qrcode = { version = "0.14.1", default-features = false }
+
+# CLI, diagnostics
+clap = { version = "4.6", features = ["derive", "env"] }
+clap_complete = "4"
+anyhow = "1"
+thiserror = "2"
+indicatif = "0.18"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false }
+tempfile = "3"
+
+# Tests
+proptest = "1.12"
+assert_cmd = "2.2"
+predicates = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 1

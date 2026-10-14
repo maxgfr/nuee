@@ -1,0 +1,11 @@
+target/
+web/pkg/
+web/tasks/
+node_modules/
+e2e/test-results/
+e2e/playwright-report/
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/coverage/
+.impeccable/
+.DS_Store

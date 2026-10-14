@@ -56,10 +56,14 @@ fuzz_short() {
     echo "  rustup toolchain install nightly && cargo install cargo-fuzz" >&2
     return 1
   fi
-  local t
+  # cargo-fuzz defaults to the triple it was built for, which is musl for prebuilt Linux
+  # binaries (no ASan there): build for this machine's host instead.
+  local t host
+  host="$(rustc +nightly -vV | sed -n 's/^host: //p')"
   for t in "${FUZZ_TARGETS[@]}"; do
     printf -- '--- fuzz %s\n' "$t"
-    (cd fuzz && cargo +nightly fuzz run "$t" -- -runs=20000 -max_total_time=60) || return 1
+    (cd fuzz && cargo +nightly fuzz run --target "$host" "$t" -- -runs=20000 -max_total_time=60) ||
+      return 1
   done
 }
 

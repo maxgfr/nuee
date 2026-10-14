@@ -3022,7 +3022,9 @@ mod io {
                     break;
                 }
             }
-            close(&conn, close_code::DONE, b"done");
+            // An answer sent just before the session ends (the Accepted of a copy that then
+            // failed) still reaches the coordinator.
+            finish(conn, send).await;
         }
     }
 

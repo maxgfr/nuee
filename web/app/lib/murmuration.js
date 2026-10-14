@@ -25,6 +25,18 @@ export function flightPhase(elapsed) {
 }
 
 /**
+ * Visible flight after the frame drawn at `now`, `last` being the previous frame's time (0 for
+ * the first one). Slow frames count in full, so the flight lasts five seconds of wall clock;
+ * frames apart by more than a second (a background tab) count as one frame.
+ * @param {number} flown
+ * @param {number} last
+ * @param {number} now
+ */
+export function flightClock(flown, last, now) {
+  return flown + (last && now - last <= 1000 ? now - last : 16);
+}
+
+/**
  * `ink` (0..7) draws the bird in that device ink of the page (--ink-0 … --ink-7).
  * @typedef {{ id: string, hue: number, ink?: number }} BirdSpec
  * @typedef {{ id: string, hue: number, ink?: number, x: number, y: number, vx: number, vy: number }} Bird
@@ -166,8 +178,7 @@ export function murmuration(canvas, opts = {}) {
 
   /** @param {number} now */
   function loop(now) {
-    // Frames apart by more than a second (a background tab) count as one frame.
-    flown += last ? Math.min(now - last, 50) : 16;
+    flown = flightClock(flown, last, now);
     last = now;
     const { pull, done } = flightPhase(flown);
     step();

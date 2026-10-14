@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { jobKey, rejectKey, endedTone, readTextFile } from '../app/lib/labels.js';
 import { tilePixels, rgbOf } from '../app/lib/board.js';
-import { flightPhase, FLIGHT_MS, SETTLE_MS } from '../app/lib/murmuration.js';
+import { flightClock, flightPhase, FLIGHT_MS, SETTLE_MS } from '../app/lib/murmuration.js';
 import { DICTS } from '../app/i18n.js';
 
 test('built-in job names are shown by their translated label, other names as they are', () => {
@@ -70,4 +70,13 @@ test('the murmuration flies about five seconds, then settles and stops', () => {
   assert.ok(flightPhase(FLIGHT_MS - 10).pull > mid.pull);
   assert.deepEqual(flightPhase(FLIGHT_MS), { pull: 1, done: true });
   assert.deepEqual(flightPhase(60_000), { pull: 1, done: true });
+});
+
+test('the flight runs on the wall clock, except a gap of more than a second', () => {
+  // A slow frame (a busy machine) counts in full, so the flight never outlasts five seconds.
+  assert.equal(flightClock(1000, 5000, 5200), 1200);
+  // The first frame, and a frame more than a second after the last one (a background tab),
+  // count as one frame.
+  assert.equal(flightClock(0, 0, 123_456), 16);
+  assert.equal(flightClock(1000, 5000, 7000), 1016);
 });

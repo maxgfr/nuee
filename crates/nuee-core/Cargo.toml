@@ -1,0 +1,24 @@
+[package]
+name = "nuee-core"
+description = "I/O-free coordinator and worker state machines for Nuée"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+nuee-proto = { workspace = true }
+serde = { workspace = true }
+blake3 = { workspace = true }
+rand = { workspace = true, features = ["small_rng", "std_rng"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

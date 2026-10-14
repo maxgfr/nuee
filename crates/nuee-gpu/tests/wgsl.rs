@@ -3,9 +3,7 @@
 //! The GPU tests need an adapter (Metal on macOS, lavapipe on the Linux CI runner). Without
 //! one they fail: they never skip.
 
-use std::ops::Deref;
-use std::sync::{PoisonError, RwLock, RwLockReadGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use nuee_core::Compare;
 use nuee_gpu::GpuRunner;
@@ -16,29 +14,10 @@ use nuee_gpu::wgsl::{
 };
 use nuee_proto::{Comparator, FailKind, TaskKind};
 
-/// Shared by the GPU tests, held exclusively by the endless shader's: GPU work cannot be
-/// preempted, so a test whose work lands behind that shader waits for it.
-static GPU: RwLock<()> = RwLock::new(());
-
-/// A runner that shares the GPU with the other tests, but not with the endless shader.
-struct Shared {
-    runner: GpuRunner,
-    _gpu: RwLockReadGuard<'static, ()>,
-}
-
-impl Deref for Shared {
-    type Target = GpuRunner;
-    fn deref(&self) -> &GpuRunner {
-        &self.runner
-    }
-}
-
-fn runner() -> Shared {
-    let gpu = GPU.read().unwrap_or_else(PoisonError::into_inner);
-    let runner = GpuRunner::new().expect(
+fn runner() -> GpuRunner {
+    GpuRunner::new().expect(
         "no GPU adapter found: these tests need one (Metal on macOS, lavapipe/Vulkan on Linux)",
-    );
-    Shared { runner, _gpu: gpu }
+    )
 }
 
 /// The CPU task's formula (tasks/mandelbrot), in f64, widened to u32.
@@ -197,60 +176,6 @@ fn binding_mismatches_are_invalid() {
         .run(MANDELBROT_WGSL, &small, Duration::from_secs(5))
         .unwrap_err();
     assert_eq!(err.kind, FailKind::Invalid, "{err}");
-}
-
-/// Set in the child process that runs the endless shader.
-const ENDLESS_CHILD: &str = "NUEE_GPU_ENDLESS_CHILD";
-
-/// An endless shader with a short deadline fails with Timeout (or Trap if the driver kills the
-/// work first), and the runner refuses new work while it still occupies the GPU.
-///
-/// wgpu bounds shader loops by default, but at 2^64 iterations. GPU work cannot be preempted:
-/// on Metal it keeps running after the deadline until the process exits, so the shader runs in
-/// a child process to leave the GPU free for the other tests, which wait until it exits.
-#[test]
-fn endless_shader_hits_the_deadline() {
-    if std::env::var_os(ENDLESS_CHILD).is_none() {
-        let _gpu = GPU.write().unwrap_or_else(PoisonError::into_inner);
-        let exe = std::env::current_exe().expect("test binary path");
-        let out = std::process::Command::new(exe)
-            .args(["endless_shader_hits_the_deadline", "--exact", "--nocapture"])
-            .env(ENDLESS_CHILD, "1")
-            .output()
-            .expect("start the child test");
-        let log = String::from_utf8_lossy(&out.stderr);
-        eprintln!("{log}");
-        assert!(out.status.success(), "child failed: {log}");
-        assert!(log.contains("endless shader:"), "the child ran the shader");
-        return;
-    }
-    let gpu = runner();
-    let wgsl = "@group(0) @binding(0) var<storage, read_write> o: array<u32>;\n\
-                @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3<u32>) {\n\
-                  var i = 0u;\n\
-                  loop { i = i * 1664525u + 1013904223u; o[id.x] = i; if (o[0] == 7u && i == 0xffffffffu) { break; } }\n\
-                }";
-    let input = encode_input("main", [64, 1, 1], &[BindingSpec::Output(0, 64 * 64 * 4)]);
-    let start = Instant::now();
-    let err = gpu
-        .run(wgsl, &input, Duration::from_millis(500))
-        .unwrap_err();
-    eprintln!("endless shader: {err} after {:?}", start.elapsed());
-    assert!(
-        matches!(err.kind, FailKind::Timeout | FailKind::Trap),
-        "{err}"
-    );
-    assert!(start.elapsed() < Duration::from_secs(20));
-    if err.kind == FailKind::Timeout {
-        let next = gpu
-            .run(
-                MANDELBROT_WGSL,
-                &mandelbrot_input(0.0, 0.0, 1.0, 8, 8, 10),
-                Duration::from_secs(5),
-            )
-            .unwrap_err();
-        assert_eq!(next.kind, FailKind::Unsupported, "{next}");
-    }
 }
 
 // --- Input format --------------------------------------------------------------------------

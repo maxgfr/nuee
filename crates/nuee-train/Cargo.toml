@@ -1,0 +1,21 @@
+[package]
+name = "nuee-train"
+description = "DiLoCo outer loop, delta codec and robust aggregation for Nuée"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+nuee-proto = { workspace = true }
+safetensors = { workspace = true }
+serde = { workspace = true }
+blake3 = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

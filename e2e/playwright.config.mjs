@@ -29,7 +29,7 @@ export default defineConfig({
   projects: [
     {
       name: 'cross',
-      testMatch: /(compute|cheat|files|skycmd|host-in-browser|webrtc|exec|gpu|embed|train|host|durable|anchor)\.spec\.mjs$/,
+      testMatch: /(compute|cheat|files|skycmd|host-in-browser|webrtc|exec|gpu|embed|train|host|durable|anchor|website)\.spec\.mjs$/,
     },
     a11y('chromium', 'Desktop Chrome'),
     a11y('firefox', 'Desktop Firefox'),

@@ -319,3 +319,35 @@ async fn a_released_copy_counts_against_the_quota_until_reclaimed() {
         .expect("tracked");
     assert!(blob.holding().is_empty(), "{blob:?}");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_copy_being_released_still_counts_against_the_quota() {
+    // Room for one copy only, and no garbage collection during the test.
+    let d = durable(98, 300_000, Duration::from_secs(3600)).await;
+    let (first, _a) = keep_one(&d, 4).await;
+    until("the first copy stored", async || {
+        d.member.held().contains(&first)
+    })
+    .await;
+    // A second order races the release of the first: whenever the member looks at it, the
+    // first copy's bytes are still on disk, so it goes over the quota.
+    let (released, (second, _b)) = tokio::join!(
+        async {
+            timeout(LIMIT, release_pin(&d.sharer, &d.job, first))
+                .await
+                .expect("in time")
+                .expect("release")
+        },
+        keep_one(&d, 5)
+    );
+    assert!(released);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(!d.member.held().contains(&second));
+    let state = d.svc.state();
+    let blob = state
+        .blobs
+        .iter()
+        .find(|b| b.hash == second)
+        .expect("tracked");
+    assert!(blob.holding().is_empty(), "{blob:?}");
+}

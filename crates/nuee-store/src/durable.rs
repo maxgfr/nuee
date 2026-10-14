@@ -2697,6 +2697,9 @@ mod io {
         acceptor: FilesAcceptor,
         admission: Admission,
         inflight: Mutex<HashMap<Hash, u64>>,
+        /// Copies a release took out of the registry and has not counted as reclaiming yet:
+        /// they still count as used, so no order is admitted in between.
+        releasing: Mutex<HashMap<Hash, u64>>,
         /// Released or failed copies still on disk until garbage collection removes them;
         /// they count against the quota until then.
         reclaiming: Mutex<HashMap<Hash, u64>>,
@@ -2753,6 +2756,7 @@ mod io {
                     acceptor,
                     admission: Admission::new(AdmitConfig::default()),
                     inflight: Mutex::new(HashMap::new()),
+                    releasing: Mutex::new(HashMap::new()),
                     reclaiming: Mutex::new(HashMap::new()),
                 }),
             })
@@ -2780,13 +2784,19 @@ mod io {
                 .spawn()
         }
 
-        /// Bytes used by the copies held.
+        /// Bytes used by the copies held, and by those a release is taking out.
         pub fn used(&self) -> u64 {
-            lock(&self.inner.registry)
+            // The registry first: a release adds to `releasing` before it lets go of the
+            // registry lock, so a copy on its way out is always seen in one or the other.
+            let held = lock(&self.inner.registry)
                 .list()
                 .iter()
                 .map(|e| e.size)
-                .fold(0u64, u64::saturating_add)
+                .fold(0u64, u64::saturating_add);
+            let releasing = lock(&self.inner.releasing)
+                .values()
+                .fold(0u64, |a, b| a.saturating_add(*b));
+            held.saturating_add(releasing)
         }
 
         /// Hashes of the copies held.
@@ -2855,6 +2865,9 @@ mod io {
             if self.inner.hub.check_size(size).is_err() {
                 return Err(PinRefusal::TooLarge);
             }
+            // Used first, then reclaiming: a release moves a copy from the one to the other
+            // in that order, so it is counted at least once, never zero times.
+            let held = self.used();
             let reclaiming = match self.reclaiming().await {
                 Ok(n) => n,
                 Err(e) => {
@@ -2862,7 +2875,7 @@ mod io {
                     return Err(PinRefusal::Busy);
                 }
             };
-            let used = self.used().saturating_add(reclaiming);
+            let used = held.saturating_add(reclaiming);
             let mut inflight = lock(&self.inner.inflight);
             if inflight.contains_key(&hash) || inflight.len() >= MAX_PARALLEL_FETCHES {
                 return Err(PinRefusal::Busy);
@@ -2911,18 +2924,27 @@ mod io {
             let removed = {
                 let mut reg = lock(&inner.registry);
                 let removed = reg.remove(&hash);
-                if removed.is_some() {
+                if let Some(entry) = &removed {
                     reg.save()?;
+                    // Before the registry lock goes: the copy keeps counting as used.
+                    lock(&inner.releasing).insert(hash, entry.size);
                 }
                 removed
             };
             if let Some(entry) = removed {
                 inner.acceptor.remove(&hash);
-                inner.hub.untag(&stored_tag(hash)).await?;
-                // Only what garbage collection can free counts as reclaiming.
-                if !inner.hub.tagged(hash).await? {
+                let collectable = async {
+                    inner.hub.untag(&stored_tag(hash)).await?;
+                    Ok::<_, StoreError>(!inner.hub.tagged(hash).await?)
+                }
+                .await;
+                // Only what garbage collection can free counts as reclaiming; after an error
+                // the copy counts there too, until reclaiming() finds it gone.
+                if !matches!(collectable, Ok(false)) {
                     self.reclaim(hash, entry.size);
                 }
+                lock(&inner.releasing).remove(&hash);
+                collectable?;
             }
             Ok(())
         }

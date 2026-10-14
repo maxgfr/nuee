@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Set the release version in Cargo.toml ([workspace.package]) and Cargo.lock (nuee* packages)."""
+"""Set the release version in Cargo.toml ([workspace.package]), Cargo.lock and fuzz/Cargo.lock (nuee* packages)."""
 
 import re
 import sys
@@ -25,7 +25,8 @@ def set_workspace_version(text: str, version: str) -> str:
 
 
 def set_lock_versions(text: str, version: str) -> str:
-    pattern = re.compile(r'(?m)^(name = "nuee[^"]*"\nversion = )"[^"]*"')
+    # nuee-fuzz keeps its own version (fuzz/Cargo.toml); it only appears in fuzz/Cargo.lock.
+    pattern = re.compile(r'(?m)^(name = "nuee(?!-fuzz")[^"]*"\nversion = )"[^"]*"')
     text, count = pattern.subn(rf'\g<1>"{version}"', text)
     if count == 0:
         fail("no nuee package found in Cargo.lock")
@@ -38,9 +39,10 @@ def main() -> None:
     version = sys.argv[1]
     root = Path(__file__).resolve().parent.parent
     manifest = root / "Cargo.toml"
-    lock = root / "Cargo.lock"
     manifest.write_text(set_workspace_version(manifest.read_text(), version))
-    lock.write_text(set_lock_versions(lock.read_text(), version))
+    # The fuzz workspace depends on the crates by path, so its lockfile records them too.
+    for lock in (root / "Cargo.lock", root / "fuzz" / "Cargo.lock"):
+        lock.write_text(set_lock_versions(lock.read_text(), version))
     print(f"prepare_release: version set to {version}")
 
 

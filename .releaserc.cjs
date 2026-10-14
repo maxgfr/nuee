@@ -5,7 +5,7 @@ module.exports = {
     './scripts/release-plugin.cjs',
     ['@semantic-release/release-notes-generator', { preset: 'conventionalcommits' }],
     ['@semantic-release/git', {
-      assets: ['Cargo.toml', 'Cargo.lock', 'README.md'],
+      assets: ['Cargo.toml', 'Cargo.lock', 'fuzz/Cargo.lock', 'README.md'],
       message: 'chore(release): ${nextRelease.version} [skip ci]'
     }],
     ['@semantic-release/github', {

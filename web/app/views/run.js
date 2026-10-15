@@ -15,12 +15,38 @@ import { errorArea, framedNotice, linkPanel, progressBar, fingerprintBlock } fro
 import { fmtNumber, fmtBytes, fmtFingerprint, shortHash } from '../lib/format.js';
 import { defaultCores, poolSize, supportedKinds, MiB } from '../lib/pool.js';
 import { hostLanes } from '../lib/rtc.js';
-import { Timings, fmtDuration, reduceWaiting, waitingTotal, taskDetail, rgbOf, tilePixels } from '../lib/board.js';
+import { Timings, fmtDuration, reduceWaiting, waitingTotal, taskDetail, rgbOf, tilePixels, escapeSample } from '../lib/board.js';
 
 /** Browser-side cap on what a page shares or hosts in total. */
 export const MAX_TOTAL = 256 * MiB;
 
 export const MANDELBROT = { size: 512, tile: 64, iter: 500, x0: -2.0, y0: -1.5, span: 3.0 };
+/**
+ * The fractal that keeps going zooms toward this point of the seahorse valley, which stays in
+ * place on the screen, by `factor` per image. It starts over once the span reaches `cpu`
+ * (f64 precision) or `gpu` (f32 tiles, whose iterations stay at MANDELBROT.iter: they are
+ * compared within a tolerance tuned for that count).
+ */
+export const ZOOM = { x: -0.743643887037158704752191506114774, y: 0.131825904205311970493132056385139, factor: 0.8, cpu: 1e-12, gpu: 0.3 };
+
+/**
+ * Image `n` of the zoom. Image 0 is MANDELBROT; the next ones gain iterations as the details
+ * get finer (CPU tiles count up to 65535).
+ * @param {number} n
+ * @param {boolean} gpu
+ * @returns {typeof MANDELBROT}
+ */
+export function zoomFrame(n, gpu) {
+  const m = MANDELBROT;
+  const last = Math.floor(Math.log((gpu ? ZOOM.gpu : ZOOM.cpu) / m.span) / Math.log(ZOOM.factor));
+  const k = Math.pow(ZOOM.factor, n % (last + 1));
+  if (k === 1) return { ...m };
+  const span = m.span * k;
+  const cx = m.x0 + m.span / 2;
+  const cy = m.y0 + m.span / 2;
+  const iter = gpu ? m.iter : Math.min(65535, Math.round(m.iter / Math.sqrt(Math.sqrt(k))));
+  return { ...m, iter, x0: ZOOM.x + (cx - ZOOM.x) * k - span / 2, y0: ZOOM.y + (cy - ZOOM.y) * k - span / 2, span };
+}
 export const SKYCMD = {
   model: 'https://maxgfr.github.io/skycmd/models/s3-pico.gguf',
   games: ['flappy', 'rescue', 'dodge', 'doom'],
@@ -102,17 +128,26 @@ export function mandelbrotGpuInputs(m) {
   return out;
 }
 
-/** @param {typeof SKYCMD} s */
-export function skycmdInputs(s) {
+/**
+ * Pass `pass` plays the next `seeds` seeds of every game (pass 0: seeds 1..seeds).
+ * @param {typeof SKYCMD} s
+ * @param {number} [pass]
+ */
+export function skycmdInputs(s, pass = 0) {
   const enc = new TextEncoder();
   const out = [];
   for (const game of s.games) {
-    for (let seed = 1; seed <= s.seeds; seed += 1) {
+    for (let seed = pass * s.seeds + 1; seed <= (pass + 1) * s.seeds; seed += 1) {
       out.push(enc.encode(JSON.stringify({ mode: 'eval', game, seed, episodes: s.episodes, tau: s.tau })));
     }
   }
   return out;
 }
+
+/** The demos that can keep going: one image or pass after another, in the same swarm. */
+const KEEPS = new Set(['mandelbrot', 'mandelbrotGpu', 'skycmd']);
+/** The shortest time a pass stays on the board before the next one starts. */
+const MIN_PASS_MS = 1500;
 
 /** Tasks drawn as squares; a larger job shows its figures only. */
 const MAX_GRID = 4096;
@@ -259,10 +294,14 @@ export function render({ app, root }) {
   const approve = h('input', { type: 'checkbox', id: 'approve' });
   const local = h('input', { type: 'checkbox', id: 'local', props: { checked: true } });
   const rtc = h('input', { type: 'checkbox', id: 'rtc', props: { disabled: typeof RTCPeerConnection !== 'function' }, 'aria-describedby': 'rtc-warn' });
+  // The demos would be over before a phone has scanned the code: they keep going until Stop.
+  const keep = h('input', { type: 'checkbox', id: 'keep', props: { checked: true }, 'aria-describedby': 'keep-help' });
+  const keepSet = h('div', null, h('div', { class: 'check' }, keep, h('label', { for: 'keep', i18n: 'run.keep' })), h('p', { id: 'keep-help', class: 'muted', i18n: 'run.keep.help' }));
   const settings = h(
     'fieldset',
     { class: 'settings' },
     h('legend', { i18n: 'run.settings' }),
+    keepSet,
     h('div', { class: 'field' }, h('label', { for: 'verify', i18n: 'run.verify' }), verify, h('p', { class: 'muted', i18n: 'run.verify.help' })),
     h('div', { class: 'check' }, approve, h('label', { for: 'approve', i18n: 'run.approve' })),
     h('div', { class: 'check' }, local, h('label', { for: 'local', i18n: 'run.local' })),
@@ -284,6 +323,7 @@ export function render({ app, root }) {
     custom.hidden = selected() !== 'custom';
     embedSet.hidden = selected() !== 'embed';
     skySet.hidden = selected() !== 'skycmd';
+    keepSet.hidden = !KEEPS.has(selected());
   });
 
   /** @type {{ name: string, job: import('../lib/jobs.js').EmbedJob } | null} */
@@ -377,7 +417,12 @@ export function render({ app, root }) {
     });
   });
 
-  /** @returns {Promise<{ spec: HostSpec, kind: string, info: ModuleInfo, embed?: import('../lib/jobs.js').EmbedJob }>} */
+  /**
+   * The first job, and for a demo that keeps going the job of each next pass (fresh copies:
+   * `host` moves the buffers of the first one).
+   * @typedef {{ spec: HostSpec, kind: string, info: ModuleInfo, embed?: import('../lib/jobs.js').EmbedJob, frame?: (pass: number) => typeof MANDELBROT, next?: (pass: number) => HostSpec }} Built
+   * @returns {Promise<Built>}
+   */
   async function buildSpec() {
     const which = selected();
     const common = {
@@ -386,16 +431,44 @@ export function render({ app, root }) {
       webrtc: rtc.checked,
       localSlots: 0,
     };
+    /** @param {Built} b */
+    const keepGoing = (b) => {
+      if (!keep.checked) return b;
+      const first = b.spec;
+      const module = first.module ? first.module.slice() : undefined;
+      const assets = first.assets ? first.assets.map((a) => a.slice()) : undefined;
+      /** @type {(pass: number) => Uint8Array[]} */
+      const inputs =
+        which === 'mandelbrot'
+          ? (pass) => mandelbrotInputs(zoomFrame(pass, false))
+          : which === 'mandelbrotGpu'
+            ? (pass) => mandelbrotGpuInputs(zoomFrame(pass, true))
+            : skyModeOf() === 'dagger'
+              ? (pass) => daggerInputs(undefined, pass)
+              : (pass) => skycmdInputs(SKYCMD, pass);
+      const next = (/** @type {number} */ pass) => ({ ...first, module: module?.slice(), assets: assets?.map((a) => a.slice()), inputs: inputs(pass) });
+      return { ...b, next };
+    };
     if (which === 'mandelbrot') {
       const m = await bundledModule(app, 'mandelbrot');
-      return { kind: which, info: m.info, spec: { ...common, name: 'mandelbrot', kind: 'wasm', module: m.bytes, inputs: mandelbrotInputs(MANDELBROT), deadlineMs: 60_000 } };
+      return keepGoing({
+        kind: which,
+        info: m.info,
+        frame: (pass) => zoomFrame(pass, false),
+        spec: { ...common, name: 'mandelbrot', kind: 'wasm', module: m.bytes, inputs: mandelbrotInputs(MANDELBROT), deadlineMs: 60_000 },
+      });
     }
     if (which === 'mandelbrotGpu') {
       const module = await fetchBytes(new URL('../../tasks/mandelbrot.wgsl', import.meta.url), 'mandelbrot.wgsl');
       const info = { hash: '', size: module.byteLength, minMemory: 0, maxMemory: 256 * MiB };
       // Same tolerance as the CLI (nuee_gpu::wgsl::MANDELBROT_COMPARE).
       const compare = /** @type {const} */ ({ kind: 'tolerance', abs: 2, rel: 0, maxBad: 50 });
-      return { kind: 'mandelbrot', info, spec: { ...common, name: 'mandelbrot-gpu', kind: 'wgsl', module, inputs: mandelbrotGpuInputs(MANDELBROT), compare, maxMemory: 256 * MiB, deadlineMs: 60_000 } };
+      return keepGoing({
+        kind: 'mandelbrot',
+        info,
+        frame: (pass) => zoomFrame(pass, true),
+        spec: { ...common, name: 'mandelbrot-gpu', kind: 'wgsl', module, inputs: mandelbrotGpuInputs(MANDELBROT), compare, maxMemory: 256 * MiB, deadlineMs: 60_000 },
+      });
     }
     if (which === 'embed') {
       if (!texts) throw { code: 'invalid_argument', message: 'no text file selected' };
@@ -406,16 +479,16 @@ export function render({ app, root }) {
     if (which === 'skycmd' && skyModeOf() === 'dagger') {
       const m = await bundledModule(app, 'skycmd-arena');
       const model = await fetchBytes(new URL(SKYCMD.model), 'skycmd model');
-      return { kind: 'skycmdDagger', info: m.info, spec: { ...common, name: 'skycmd-dagger', kind: 'wasm', module: m.bytes, assets: [model], inputs: daggerInputs(), deadlineMs: 600_000 } };
+      return keepGoing({ kind: 'skycmdDagger', info: m.info, spec: { ...common, name: 'skycmd-dagger', kind: 'wasm', module: m.bytes, assets: [model], inputs: daggerInputs(), deadlineMs: 600_000 } });
     }
     if (which === 'skycmd') {
       const m = await bundledModule(app, 'skycmd-arena');
       const model = await fetchBytes(new URL(SKYCMD.model), 'skycmd model');
-      return {
+      return keepGoing({
         kind: which,
         info: m.info,
         spec: { ...common, name: 'skycmd-eval', kind: 'wasm', module: m.bytes, assets: [model], inputs: skycmdInputs(SKYCMD), deadlineMs: 600_000 },
-      };
+      });
     }
     if (!customModule) throw { code: 'invalid_module', message: 'no module selected' };
     const files = inputsInput.files ? [...inputsInput.files] : [];
@@ -427,14 +500,33 @@ export function render({ app, root }) {
   }
 
   async function start() {
-    const { spec, kind, info, embed } = await buildSpec();
+    const { spec, kind, info, embed, frame, next } = await buildSpec();
     const titleKey = kind === 'skycmdDagger' ? 'run.job.skycmdDagger' : `run.job.${selected()}`;
     const total = spec.inputs.length;
     await app.node();
     const pool = app.pool(defaultCores(app.caps.cores));
     const slots = poolSize({ ...pool.device, wanted: pool.slots, maxMemory: info.maxMemory });
     spec.localSlots = local.checked ? slots : 0;
-    const view = liveView(app, kind, total, spec.webrtc === true, embed ?? null);
+    const view = liveView(app, kind, total, spec.webrtc === true, embed ?? null, frame ?? (() => MANDELBROT));
+    if (next) {
+      // Each pass done, the next one goes to the same swarm: the devices stay and the finished
+      // job is dropped (a swarm holds 64).
+      let pass = 0;
+      view.keepGoing((job, ms) => {
+        if (session === null) return;
+        app.bridge.call('forget', { session, job }).catch((e) => console.warn('forget', e));
+        // A pass shorter than MIN_PASS_MS stays on screen that long; the time shown is its own.
+        setTimeout(() => {
+          const s = session;
+          if (s === null) return;
+          pass += 1;
+          app.bridge.call('submit', { session: s, spec: next(pass) }).then(
+            (n) => view.follow(n),
+            (e) => view.failed(e),
+          );
+        }, Math.max(0, MIN_PASS_MS - ms));
+      });
+    }
     /** @type {number | null} */
     let session = null;
     /** @type {Array<{ event: NueeEvent, session: number | undefined }>} */
@@ -510,11 +602,28 @@ export function render({ app, root }) {
  * @param {number} total
  * @param {boolean} webrtc
  * @param {import('../lib/jobs.js').EmbedJob | null} embed
+ * @param {(pass: number) => typeof MANDELBROT} frameOf the fractal image of each pass
  */
-function liveView(app, kind, total, webrtc, embed) {
+function liveView(app, kind, total, webrtc, embed, frameOf) {
   const counts = { peers: 0, done: 0, verified: 0, mismatch: 0, banned: 0, failed: 0, redone: 0, rate: 0, direct: 0 };
-  /** @type {Map<number, { bytes: Uint8Array, by: string, hash: string }>} */
+  /** Every pass's results, keyed by `offset + task` (the fractal keeps its current image only). @type {Map<number, { bytes: Uint8Array, by: string, hash: string }>} */
   const results = new Map();
+  // A demo that keeps going runs one job per pass; the board follows the latest one.
+  /** @type {((job: number, ms: number) => void) | null} */
+  let keepCb = null;
+  let job = -1;
+  let pass = 0;
+  let offset = 0;
+  let verifiedBefore = 0;
+  let passStart = performance.now();
+  /** @type {number | null} */
+  let lastPassMs = null;
+  let frame = frameOf(0);
+  // A deep image is shaded by the rank of each count among a sample of the previous image's.
+  /** @type {Float64Array | undefined} */
+  let ranks;
+  /** @type {number[]} */
+  let sample = [];
   /** @type {(() => void) | null} */
   let disposeLink = null;
   /** @type {(() => void) | null} */
@@ -544,6 +653,9 @@ function liveView(app, kind, total, webrtc, embed) {
   const pendingList = h('ul', { class: 'pending' });
   const pendingSection = h('section', { class: 'card', hidden: true, 'aria-labelledby': 'pending-title' }, h('h2', { id: 'pending-title', i18n: 'run.pending' }), pendingList);
   const image = h('canvas', { class: 'fractal', width: MANDELBROT.size, height: MANDELBROT.size, role: 'img', i18nAttr: { 'aria-label': 'run.fractalAlt' } });
+  // Which image or pass is on the board, and how long the last one took: it gets shorter as
+  // devices join.
+  const passNote = h('p', { class: 'pass-note', hidden: true });
   const resultsSlot = h('div', { class: 'results' });
   const downloadBtn = h('button', { type: 'button', class: 'btn', props: { disabled: true } }, icon('download'), h('span', { i18n: embed ? 'run.downloadVectors' : 'run.download' }));
   const metaBtn = embed ? h('button', { type: 'button', class: 'btn secondary', props: { disabled: true } }, icon('download'), h('span', { i18n: 'run.downloadMeta' })) : null;
@@ -693,6 +805,7 @@ function liveView(app, kind, total, webrtc, embed) {
       { class: 'work-col' },
       titleSlot,
       h('div', { class: 'figures' }, progress.el, stats),
+      passNote,
       pendingSection,
       waitingNote,
       h(
@@ -822,9 +935,10 @@ function liveView(app, kind, total, webrtc, embed) {
   /** @param {number} task @param {Uint8Array} bytes @param {string} by */
   function paintTile(task, bytes, by) {
     if (!ctx2d) return;
-    const m = MANDELBROT;
+    const m = frame;
     const n = m.size / m.tile;
-    const pixels = tilePixels(bytes, m.tile, m.iter, palette.paper, palette.inks[inkOf(by) % INKS] ?? [29, 59, 154]);
+    if (keepCb) escapeSample(bytes, m.tile, m.iter, 13, sample);
+    const pixels = tilePixels(bytes, m.tile, m.iter, palette.paper, palette.inks[inkOf(by) % INKS] ?? [29, 59, 154], ranks);
     if (!pixels) return;
     const img = ctx2d.createImageData(m.tile, m.tile);
     img.data.set(pixels);
@@ -833,7 +947,7 @@ function liveView(app, kind, total, webrtc, embed) {
   const scheme = window.matchMedia('(prefers-color-scheme: dark)');
   const onScheme = () => {
     palette = readPalette();
-    if (kind === 'mandelbrot') for (const [task, r] of results) paintTile(task, r.bytes, r.by);
+    if (kind === 'mandelbrot') for (const [key, r] of results) paintTile(key - offset, r.bytes, r.by);
   };
   scheme.addEventListener('change', onScheme);
 
@@ -927,6 +1041,51 @@ function liveView(app, kind, total, webrtc, embed) {
     );
   }
 
+  const renderPass = () => {
+    passNote.hidden = keepCb === null;
+    if (keepCb === null) return;
+    const unit = kind === 'mandelbrot' ? 'image' : 'round';
+    setText(passNote, lastPassMs === null ? `run.pass.${unit}` : `run.pass.${unit}After`, { n: fmtNumber(pass + 1), time: lastPassMs === null ? '' : fmtDuration(lastPassMs) });
+  };
+
+  /** The board turns to the next pass: blank squares, the next image. */
+  function newPass() {
+    pass += 1;
+    passStart = performance.now();
+    offset += total;
+    if (kind === 'mandelbrot') results.clear();
+    const before = frame;
+    frame = frameOf(pass);
+    // Back at the first image once the zoom has gone as deep as it can: shades start over.
+    ranks = frame.span < before.span && sample.length > 0 ? Float64Array.from(sample).sort() : undefined;
+    sample = [];
+    verifiedBefore = counts.verified;
+    counts.done = 0;
+    waiting.clear();
+    renderWaiting();
+    for (const sq of squares) {
+      sq.el.removeAttribute('class');
+      sq.state = 'waiting';
+      sq.device = 0;
+      sq.by = '';
+      sq.ms = null;
+    }
+    latest = null;
+    labelAll();
+    renderStats();
+    renderPass();
+  }
+
+  /** Whether an event of job `n` is for the board, which moves on to a newer job. @param {number} n */
+  function adopt(n) {
+    if (n < job) return false;
+    if (n > job) {
+      if (job !== -1) newPass();
+      job = n;
+    }
+    return true;
+  }
+
   /** @returns {Map<number, Uint8Array>} */
   const outputs = () => new Map([...results].map(([k, r]) => [k, r.bytes]));
 
@@ -989,10 +1148,11 @@ function liveView(app, kind, total, webrtc, embed) {
     },
     /** @param {NueeEvent} e @param {number} _s */
     onEvent(e, _s) {
+      if ('job' in e && typeof e.job === 'number' && !adopt(e.job)) return;
       if (reduceWaiting(waiting, e)) renderWaiting();
       switch (e.type) {
         case 'accepted': {
-          results.set(e.task, { bytes: e.output, by: e.by, hash: e.hash });
+          results.set(offset + e.task, { bytes: e.output, by: e.by, hash: e.hash });
           timings.add(e.by, e.ms);
           const sq = squares[e.task];
           if (sq) {
@@ -1007,7 +1167,7 @@ function liveView(app, kind, total, webrtc, embed) {
         }
         case 'progress':
           counts.done = e.done;
-          counts.verified = e.verified;
+          counts.verified = verifiedBefore + e.verified;
           counts.rate = e.rate;
           renderStats();
           break;
@@ -1045,6 +1205,13 @@ function liveView(app, kind, total, webrtc, embed) {
           app.bridge.call('status', { session }).then(renderPeers, (err) => console.warn('status', err));
           break;
         case 'jobDone':
+          lastPassMs = performance.now() - passStart;
+          if (keepCb) {
+            downloadBtn.disabled = false;
+            summarize();
+            keepCb(e.job, lastPassMs);
+            break;
+          }
           finished = true;
           downloadBtn.disabled = false;
           if (metaBtn) metaBtn.disabled = false;
@@ -1063,6 +1230,22 @@ function liveView(app, kind, total, webrtc, embed) {
     laneResult() {
       counts.direct += 1;
       renderStats();
+    },
+    /** Each finished pass (its job, its time) is handed to `fn`, which starts the next one. @param {(job: number, ms: number) => void} fn */
+    keepGoing(fn) {
+      keepCb = fn;
+      renderPass();
+    },
+    /** The next pass was submitted as job `n`. @param {number} n */
+    follow(n) {
+      adopt(n);
+    },
+    /** The next pass could not be submitted: the board stops there. @param {unknown} err */
+    failed(err) {
+      keepCb = null;
+      finished = true;
+      const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : 'internal';
+      resultsSlot.prepend(alertBox(`err.${code}`));
     },
     /** @param {() => void} fn */
     onStop(fn) {

@@ -27,12 +27,16 @@ const MAX_ROUNDS: u32 = 10_000;
 const MAX_INNER_STEPS: u32 = 100_000;
 /// Most workers per round (tasks per round job).
 const MAX_WORKERS: u16 = 256;
+/// Longest pause a page may ask for between round starts.
+const MAX_MIN_ROUND_MS: u32 = 60_000;
 
 /// The training part of a host spec.
 pub(super) struct Setup {
     pub(super) spec: TrainSpec,
     init: Params,
     inner_lr: f32,
+    /// A round starts no sooner than this after the previous one (a demo paces its rounds).
+    min_round_ms: u32,
 }
 
 fn num(spec: &JsValue, key: &str) -> Result<f32, WebError> {
@@ -64,6 +68,12 @@ pub(super) fn parse(spec: &JsValue, kind: TaskKind) -> Result<Option<Setup>, Web
     let outer_lr = num(&t, "outerLr")?;
     let outer_momentum = num(&t, "outerMomentum")?;
     let inner_lr = opt_f32(&t, "innerLr")?.unwrap_or(0.0);
+    let min_round_ms = opt_u32(&t, "minRoundMs")?.unwrap_or(0);
+    if min_round_ms > MAX_MIN_ROUND_MS {
+        return Err(WebError::invalid(
+            "train.minRoundMs must be within 0..=60000",
+        ));
+    }
     let trim = opt_f32(&t, "trim")?.unwrap_or(0.2);
     let cos_min = opt_f32(&t, "cosMin")?.unwrap_or(0.0);
     let norm_max_ratio = opt_f32(&t, "normMaxRatio")?.unwrap_or(3.0);
@@ -104,6 +114,7 @@ pub(super) fn parse(spec: &JsValue, kind: TaskKind) -> Result<Option<Setup>, Web
         },
         init,
         inner_lr,
+        min_round_ms,
     }))
 }
 
@@ -117,6 +128,7 @@ struct Base {
     compare: nuee_proto::Comparator,
     deadline_ms: u32,
     spec: TrainSpec,
+    min_round_ms: u32,
 }
 
 /// The round being collected.
@@ -142,6 +154,7 @@ async fn submit_round(host: &Host, base: &Base, state: &TrainState) -> Result<Ro
             spec: base.spec.clone(),
             init: state.params().clone(),
             inner_lr: 0.0,
+            min_round_ms: 0,
         }),
     };
     let job = submit_job(host, job).await?;
@@ -185,6 +198,7 @@ pub(super) async fn start(
         compare: job.compare,
         deadline_ms: job.deadline_ms,
         spec: setup.spec,
+        min_round_ms: setup.min_round_ms,
     };
     let round = submit_round(&host, &base, &state).await?;
     let first = round.job;
@@ -210,6 +224,7 @@ async fn drive(
     sink: Sink,
 ) {
     let mut round = Some(first);
+    let mut started = js_sys::Date::now();
     let mut to_forget: BTreeSet<u32> = BTreeSet::new();
     while let Some(ev) = rx.recv().await {
         let mut close = false;
@@ -294,6 +309,11 @@ async fn drive(
             }
             continue;
         }
+        let wait = f64::from(base.min_round_ms) - (js_sys::Date::now() - started);
+        if wait > 0.0 {
+            n0_future::time::sleep(std::time::Duration::from_secs_f64(wait / 1000.0)).await;
+        }
+        started = js_sys::Date::now();
         match submit_round(&host, &base, &state).await {
             Ok(r) => round = Some(r),
             Err(e) => error_event(&sink, &e),

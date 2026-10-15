@@ -37,6 +37,7 @@ getrandom03 = { workspace = true, features = ["wasm_js"] }
 getrandom04 = { workspace = true, features = ["wasm_js"] }
 bytes = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+n0-future = { workspace = true }
 
 # scripts/build-web.sh runs wasm-opt itself with the flags it needs.
 [package.metadata.wasm-pack.profile.release]

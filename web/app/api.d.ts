@@ -77,6 +77,8 @@ export class HostSession {
   approve(peer: string, accept: boolean): void;
   /** Adds a job (same shape as HostSpec; the swarm settings in it are ignored). Resolves to its number. */
   submit(spec: JobSpec): Promise<number>;
+  /** Drops a finished job, freeing its slot among the 64 a swarm holds; false when unknown or unfinished. */
+  forget(job: number): Promise<boolean>;
   status(): Promise<SwarmStatus>;
   /** Relays WebRTC signalling between peers (S-029). */
   setWebrtc(on: boolean): void;
@@ -170,6 +172,8 @@ export interface TrainSpecJs {
   trim?: number;
   cosMin?: number;
   normMaxRatio?: number;
+  /** The next round is submitted no sooner than this after the previous one (0..=60000, default 0). */
+  minRoundMs?: number;
 }
 
 export interface JobSpec {
@@ -355,7 +359,7 @@ export type NueeEvent =
 // qrSvg, validateModule, version).
 
 export type Op =
-  | 'start' | 'host' | 'join' | 'approve' | 'submit' | 'setSlots' | 'setWebrtc' | 'sendRtc'
+  | 'start' | 'host' | 'join' | 'approve' | 'submit' | 'forget' | 'setSlots' | 'setWebrtc' | 'sendRtc'
   | 'stop' | 'share' | 'fetchFile' | 'fetchSite' | 'http' | 'status' | 'parseLink'
   | 'fingerprint' | 'qrSvg' | 'validateModule' | 'version' | 'laneOpen' | 'laneFrame' | 'laneClosed';
 
@@ -366,6 +370,7 @@ export interface OpMap {
   join: { args: { link: string; opts: JoinOptions }; value: { session: number } };
   approve: { args: { session: number; peer: string; accept: boolean }; value: null };
   submit: { args: { session: number; spec: JobSpec }; value: number };
+  forget: { args: { session: number; job: number }; value: boolean };
   setSlots: { args: { session: number; n: number }; value: null };
   setWebrtc: { args: { session: number; on: boolean }; value: null };
   sendRtc: { args: { session: number; peer: string; kind: RtcKind; payload: string }; value: null };

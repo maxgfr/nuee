@@ -15,8 +15,15 @@ import { errorArea, framedNotice, linkPanel, fingerprintBlock } from '../lib/ui.
 import { fmtNumber, fmtFingerprint } from '../lib/format.js';
 import { defaultCores, poolSize } from '../lib/pool.js';
 
-/** Defaults of the demo (the same budget the exactness test calibrates). */
-export const TRAIN = { rounds: 10, innerSteps: 30, workers: 4, innerLr: 0.1, outerLr: 0.7, outerMomentum: 0.9, initSeed: 7 };
+/**
+ * Defaults of the demo: the budget the exactness test calibrates (crates/nuee-exec/tests/
+ * toy_trainer.rs), over 300 rounds instead of 10, each round given at least `minRoundMs`: a
+ * page alone trains them in under a second, so the run would be over before the room joins.
+ * It lasts a few minutes and the loss curve draws itself as devices come in.
+ */
+export const TRAIN = { rounds: 300, innerSteps: 30, workers: 4, innerLr: 0.1, outerLr: 0.7, outerMomentum: 0.9, initSeed: 7, minRoundMs: 500 };
+/** The most rounds a page coordinates (MAX_ROUNDS in crates/nuee-web/src/wasm/train.rs). */
+const MAX_ROUNDS = 10_000;
 const IN = 64;
 const SAMPLE = IN + 1;
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -173,7 +180,7 @@ export function render({ app, root }) {
     const input = h('input', { type: 'number', id, inputmode: 'numeric', props: { value, min: 1, max, step: 1 } });
     return { input, el: h('div', { class: 'field' }, h('label', { for: id, i18n: key }), input) };
   };
-  const rounds = numberField('train-rounds', 'train.rounds', TRAIN.rounds, 200);
+  const rounds = numberField('train-rounds', 'train.rounds', TRAIN.rounds, MAX_ROUNDS);
   const inner = numberField('train-inner', 'train.innerSteps', TRAIN.innerSteps, 2000);
   const workers = numberField('train-workers', 'train.workers', TRAIN.workers, 64);
   const verify = h(
@@ -232,7 +239,7 @@ export function render({ app, root }) {
   });
 
   async function start() {
-    const plan = { rounds: intOf(rounds.input, 200), innerSteps: intOf(inner.input, 2000), workers: intOf(workers.input, 64) };
+    const plan = { rounds: intOf(rounds.input, MAX_ROUNDS), innerSteps: intOf(inner.input, 2000), workers: intOf(workers.input, 64) };
     const tr = await loadTrainer(app);
     await app.node();
     const pool = app.pool(defaultCores(app.caps.cores));
@@ -249,7 +256,7 @@ export function render({ app, root }) {
       approve: approve.checked,
       localSlots: local.checked ? slots : 0,
       deadlineMs: 60_000,
-      train: { ...plan, outerLr: TRAIN.outerLr, outerMomentum: TRAIN.outerMomentum, innerLr: TRAIN.innerLr, codec: 'f32', init },
+      train: { ...plan, outerLr: TRAIN.outerLr, outerMomentum: TRAIN.outerMomentum, innerLr: TRAIN.innerLr, codec: 'f32', init, minRoundMs: TRAIN.minRoundMs },
     };
     const view = liveView(app, plan.rounds, async (params) => parseEval(await runLocal(pool, tr, evalLease(params))), tr);
     /** @type {number | null} */

@@ -159,15 +159,17 @@ export function mergeEmbed(job, outputs) {
 export const DAGGER = Object.freeze({ games: ['flappy', 'rescue', 'dodge', 'doom'], seeds: 4, n: 4000, tau: Math.fround(0.6), maxPipes: 200 });
 
 /**
- * One input per game and seed, with the keys in serde_json's (sorted) order.
+ * One input per game and seed, with the keys in serde_json's (sorted) order. Pass `pass`
+ * takes the next `seeds` seeds (pass 0: seeds 1..seeds, as the CLI).
  * @param {typeof DAGGER} d
+ * @param {number} [pass]
  * @returns {Uint8Array[]}
  */
-export function daggerInputs(d = DAGGER) {
+export function daggerInputs(d = DAGGER, pass = 0) {
   const enc = new TextEncoder();
   const out = [];
   for (const game of d.games) {
-    for (let seed = 1; seed <= d.seeds; seed += 1) {
+    for (let seed = pass * d.seeds + 1; seed <= (pass + 1) * d.seeds; seed += 1) {
       out.push(enc.encode(JSON.stringify({ game, max_pipes: d.maxPipes, mode: 'dagger', n: d.n, seed, tau: d.tau })));
     }
   }

@@ -35,7 +35,7 @@ The link is the cluster. A link carries the coordinator's key and a secret, so o
 - Static site on GitHub Pages at https://maxgfr.github.io/nuee/, an origin shared with other apps: nothing hosted ever runs in it, nothing secret is stored in browser storage.
 - Vanilla HTML/CSS/JS ES modules, no bundler, no framework, no CDN; strict CSP and Trusted Types; no innerHTML.
 - Networking runs in a dedicated Web Worker (iroh over an encrypted relay); tasks run in a pool of Web Workers; WebGPU when present; WebRTC direct lanes only when the presenter turns them on (IP addresses then become visible to each other).
-- Views: home (four doors: Launch, Join, Share a file, Open a link), run (presenter: catalogue, verification mode, approval, WebRTC toggle, link + QR + six-emoji fingerprint, fullscreen presentation, live progress, results), join (consent card, contribute, pause/stop, thanks), file, share, service console, site preview, train together, about.
+- Views: home (four doors: Launch, Join, Share a file, Open a link), run (presenter: catalogue, keep going until Stop (the fractal zooms in image after image, skycmd plays new seeds, in the same swarm), verification mode, approval, WebRTC toggle, link + QR + six-emoji fingerprint, fullscreen presentation, live progress, results), join (consent card, contribute, pause/stop, thanks), file, share, service console, site preview, train together, about.
 - Errors must say what to do: relay unreachable, swarm ended, link truncated, unsupported browser (no WebAssembly SIMD, iOS Lockdown Mode).
 - Undecided: none recorded beyond the visual system, which the design pass establishes.
 

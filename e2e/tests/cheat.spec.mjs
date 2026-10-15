@@ -91,6 +91,7 @@ async function outputHashes(page) {
 async function startFractal(page, local) {
   await page.goto(pageUrl('#/run'));
   await page.locator('input[name=job][value=mandelbrot]').check();
+  await page.locator('#keep').uncheck();
   await expect(page.locator('#verify')).toHaveValue('sample');
   if (local) await page.locator('#local').check();
   else await page.locator('#local').uncheck();

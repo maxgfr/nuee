@@ -97,28 +97,61 @@ export function rgbOf(hex, fallback) {
 
 /**
  * The RGBA pixels of one fractal tile in a device's ink on the page's paper: iteration counts
- * (u16 from CPU tiles, u32 from GPU tiles) shade from the paper to the ink. Null when the
- * bytes are too short for the tile.
+ * (u16 from CPU tiles, u32 from GPU tiles) shade from the paper to the ink, a point that never
+ * escapes in full ink. Given `ranks` (sorted escape counts of the previous image), a count
+ * shades by its rank among them, so a deep image, whose counts crowd together, keeps its
+ * contrast. Null when the bytes are too short for the tile.
  * @param {Uint8Array} bytes
  * @param {number} tile
  * @param {number} iter
  * @param {[number, number, number]} paper
  * @param {[number, number, number]} ink
+ * @param {ArrayLike<number>} [ranks]
  * @returns {Uint8ClampedArray | null}
  */
-export function tilePixels(bytes, tile, iter, paper, ink) {
+export function tilePixels(bytes, tile, iter, paper, ink, ranks) {
   const px = tile * tile;
   if (bytes.byteLength < px * 2) return null;
   const wide = bytes.byteLength >= px * 4;
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const out = new Uint8ClampedArray(px * 4);
+  const n = ranks ? ranks.length : 0;
   for (let i = 0; i < px; i += 1) {
     const it = wide ? v.getUint32(i * 4, true) : v.getUint16(i * 2, true);
-    const f = it >= iter ? 1 : 0.08 + 0.8 * Math.sqrt(it / iter);
+    let f = 1;
+    if (it < iter && n > 0 && ranks) {
+      let a = 0;
+      let b = n;
+      while (a < b) {
+        const mid = (a + b) >> 1;
+        if (ranks[mid] < it) a = mid + 1;
+        else b = mid;
+      }
+      f = 0.08 + 0.8 * (a / n);
+    } else if (it < iter) f = 0.08 + 0.8 * Math.sqrt(it / iter);
     out[i * 4] = Math.round(paper[0] + (ink[0] - paper[0]) * f);
     out[i * 4 + 1] = Math.round(paper[1] + (ink[1] - paper[1]) * f);
     out[i * 4 + 2] = Math.round(paper[2] + (ink[2] - paper[2]) * f);
     out[i * 4 + 3] = 255;
   }
   return out;
+}
+
+/**
+ * Every `every`-th count of a tile's points that escape (below `iter`), appended to `into`.
+ * @param {Uint8Array} bytes
+ * @param {number} tile
+ * @param {number} iter
+ * @param {number} every
+ * @param {number[]} into
+ */
+export function escapeSample(bytes, tile, iter, every, into) {
+  const px = tile * tile;
+  if (bytes.byteLength < px * 2) return;
+  const wide = bytes.byteLength >= px * 4;
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let i = 0; i < px; i += every) {
+    const it = wide ? v.getUint32(i * 4, true) : v.getUint16(i * 2, true);
+    if (it < iter) into.push(it);
+  }
 }

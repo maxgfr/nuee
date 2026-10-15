@@ -1184,6 +1184,16 @@ impl HostSession {
         })
     }
 
+    /// Drops a finished job so its slot among the `MAX_JOBS` is free again; resolves to false
+    /// when the job is unknown or not finished.
+    pub fn forget(&self, job: u32) -> Promise {
+        let host = self.inner.clone();
+        future_to_promise(async move {
+            let done = host.handle.forget(job).await.map_err(stopped)?;
+            Ok(JsValue::from(done))
+        })
+    }
+
     /// Snapshot of peers and jobs.
     pub fn status(&self) -> Promise {
         let host = self.inner.clone();

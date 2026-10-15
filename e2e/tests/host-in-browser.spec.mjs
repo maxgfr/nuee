@@ -23,6 +23,7 @@ test('a page coordinates a job for a CLI worker and a Firefox tab', async () => 
   await host.setViewportSize({ width: 390, height: 844 });
   await host.goto(pageUrl('#/run'));
   await host.locator('input[name=job][value=mandelbrot]').check();
+  await host.locator('#keep').uncheck();
   await host.locator('#verify').selectOption('full');
   // The page only coordinates: every task is computed by the CLI worker and the Firefox tab.
   await host.locator('#local').uncheck();
@@ -121,6 +122,30 @@ test('a page coordinates a job for a CLI worker and a Firefox tab', async () => 
   expect(n, `firefox: ${counter}`).toBeGreaterThan(0);
 
   // Stopping the swarm brings focus back to the page title.
+  await host.getByRole('button', { name: 'Stop the swarm' }).click();
+  await expect(host.locator('#run-title')).toBeFocused();
+  h.checkPages();
+});
+
+test('the fractal keeps going until Stop, so a device that joins late still gets tiles', async () => {
+  const host = await h.page(await h.browser('chromium'), 'chromium host');
+  await host.goto(pageUrl('#/run'));
+  await host.locator('input[name=job][value=mandelbrot]').check();
+  await expect(host.locator('#keep')).toBeChecked();
+  await host.getByRole('button', { name: 'Start' }).click();
+  const field = host.locator('#share-link');
+  await expect(field).toHaveValue(/#\/J\//, { timeout: 30_000 });
+  // The page alone gets through several images, each zoomed in from the one before.
+  await expect(host.locator('.pass-note')).toHaveText(/^Image ([3-9]|\d{2,}) · the previous one took /, { timeout: 60_000 });
+  await expect(host.getByText('Done. Every task has a result.')).toHaveCount(0);
+
+  // A worker that joins now computes tiles of the images still to come.
+  const worker = h.cli(['--json', 'join', '-', '--slots', '2'], { stdin: `${await field.inputValue()}\n` });
+  await worker.event('welcome', 60_000);
+  await expect.poll(() => worker.events().filter((e) => e.event === 'task' && e.ok === true).length, { timeout: 60_000 }).toBeGreaterThan(0);
+  await expect(host.locator('table.peers tbody')).toContainText('Command line', { timeout: 30_000 });
+  await expect(host.locator('.corr-note')).toHaveClass(/\bclean\b/);
+
   await host.getByRole('button', { name: 'Stop the swarm' }).click();
   await expect(host.locator('#run-title')).toBeFocused();
   h.checkPages();

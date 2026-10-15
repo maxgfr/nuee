@@ -164,6 +164,7 @@ test('with WebRTC off no RTCPeerConnection is ever created', async () => {
   const host = await countingPage(await launch('chromium'), 'chromium host');
   await host.goto(e2eUrl('#/run'));
   await host.locator('input[name=job][value=mandelbrot]').check();
+  await host.locator('#keep').uncheck();
   await expect(host.locator('#rtc')).not.toBeChecked();
   await host.getByRole('button', { name: 'Start' }).click();
   const field = host.locator('#share-link');

@@ -174,6 +174,12 @@ async function handle(op, args, id) {
       if (s.kind !== 'host') throw { code: 'invalid_argument', message: 'not a host session' };
       return [await s.s.submit(a.spec), []];
     }
+    case 'forget': {
+      const a = /** @type {OpMap['forget']['args']} */ (args);
+      const s = session(a.session);
+      if (s.kind !== 'host') throw { code: 'invalid_argument', message: 'not a host session' };
+      return [await s.s.forget(a.job), []];
+    }
     case 'status': {
       const a = /** @type {OpMap['status']['args']} */ (args);
       const s = session(a.session);

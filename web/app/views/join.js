@@ -147,6 +147,8 @@ export function render({ app, root, route }) {
     const MAX_SQUARES = 240;
     let started = 0;
     const jobs = h('ul', { class: 'facts' });
+    /** @type {Set<string>} */
+    const jobNames = new Set();
     const pauseBtn = h('button', { type: 'button', class: 'btn secondary', i18n: 'join.pause' });
     const stopBtn = h('button', { type: 'button', class: 'btn danger' }, icon('stop'), h('span', { i18n: 'join.stop' }));
     const panel = h(
@@ -232,6 +234,9 @@ export function render({ app, root, route }) {
           break;
         case 'jobAdded': {
           // Built-in jobs by their name in the page's language; a presenter's own name as is.
+          // A job that keeps going comes back once per image or pass: it is listed once.
+          if (jobNames.has(e.name)) break;
+          jobNames.add(e.name);
           const k = jobKey(e.name);
           jobs.append(k ? h('li', { i18n: k }) : h('li', { text: e.name }));
           break;

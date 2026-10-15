@@ -4353,6 +4353,7 @@ dependencies = [
  "iroh",
  "iroh-blobs",
  "js-sys",
+ "n0-future",
  "nuee-core",
  "nuee-gpu",
  "nuee-net",

@@ -19,8 +19,10 @@ test.afterEach(async () => {
 test('DiLoCo demo hosted by a page, with a Firefox tab and a CLI worker', async () => {
   const host = await h.page(await h.browser('chromium'), 'chromium host');
   await host.goto(pageUrl('#/train'));
-  const rounds = Number(await host.locator('#train-rounds').inputValue());
-  expect(rounds).toBeGreaterThan(1);
+  // The demo lasts minutes by default; the calibrated budget is 10 rounds.
+  expect(Number(await host.locator('#train-rounds').inputValue())).toBeGreaterThan(10);
+  await host.locator('#train-rounds').fill('10');
+  const rounds = 10;
   // Every delta a peer sends is recomputed and compared byte for byte.
   await host.locator('#train-verify').selectOption('full');
   // The page only coordinates: every delta comes from the Firefox tab or the CLI worker.

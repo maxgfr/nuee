@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "nuee"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -4192,7 +4192,7 @@ dependencies = [
 
 [[package]]
 name = "nuee-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "nuee-proto",
@@ -4204,7 +4204,7 @@ dependencies = [
 
 [[package]]
 name = "nuee-exec"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "nix",
@@ -4221,7 +4221,7 @@ dependencies = [
 
 [[package]]
 name = "nuee-gpu"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -4246,7 +4246,7 @@ dependencies = [
 
 [[package]]
 name = "nuee-host"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "http-body-util",
@@ -4264,7 +4264,7 @@ dependencies = [
 
 [[package]]
 name = "nuee-net"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "futures-lite",
@@ -4286,7 +4286,7 @@ dependencies = [
 
 [[package]]
 name = "nuee-proto"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "data-encoding",
@@ -4306,7 +4306,7 @@ dependencies = [
 
 [[package]]
 name = "nuee-store"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "age",
  "bao-tree",
@@ -4332,7 +4332,7 @@ dependencies = [
 
 [[package]]
 name = "nuee-train"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "nuee-proto",
@@ -4343,7 +4343,7 @@ dependencies = [
 
 [[package]]
 name = "nuee-web"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "console_error_panic_hook",

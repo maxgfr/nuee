@@ -4300,7 +4300,7 @@ dependencies = [
  "subtle",
  "thiserror 2.0.21",
  "toml 1.1.8+spec-1.1.0",
- "wasmparser 0.261.0",
+ "wasmparser 0.262.0",
  "wat",
 ]
 
@@ -7310,6 +7310,15 @@ dependencies = [
  "bitflags 2.13.2",
  "indexmap",
  "semver",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.262.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "974d643b125b272607e2fff8012ea14a8328acd7621e4bafa7afb32500052b1b"
+dependencies = [
+ "bitflags 2.13.2",
 ]
 
 [[package]]

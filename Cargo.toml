@@ -63,7 +63,7 @@ getrandom04 = { package = "getrandom", version = "0.4" }
 
 # Execution, compute
 wasmparser = { version = "0.261", default-features = false }
-wasmtime = { version = "=49.0.3", default-features = false }
+wasmtime = { version = "=49.0.4", default-features = false }
 wat = "1"
 nix = { version = "0.31", default-features = false }
 wgpu = "30"

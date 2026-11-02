@@ -29,8 +29,8 @@ nuee-host = { path = "crates/nuee-host" }
 iroh = { version = "1.3.0", default-features = false }
 iroh-base = { version = "1.3.0", default-features = false }
 iroh-relay = { version = "1.3.0", default-features = false }
-iroh-blobs = { version = "0.103.1", default-features = false }
-bao-tree = { version = "0.16.1", default-features = false }
+iroh-blobs = { version = "0.104.0", default-features = false }
+bao-tree = { version = "0.17.0", default-features = false }
 n0-future = "0.3.2"
 n0-watcher = "1"
 tokio = { version = "1.53", default-features = false }
@@ -63,7 +63,7 @@ getrandom04 = { package = "getrandom", version = "0.4" }
 
 # Execution, compute
 wasmparser = { version = "0.262", default-features = false }
-wasmtime = { version = "=49.0.5", default-features = false }
+wasmtime = { version = "=50.0.1", default-features = false }
 wat = "1"
 nix = { version = "0.31", default-features = false }
 wgpu = "30"

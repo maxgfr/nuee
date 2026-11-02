@@ -7,6 +7,12 @@ yanked = "deny"
 # Unmaintained notices fail only for direct dependencies; every current one is transitive
 # (postcard -> heapless 0.7, candle -> gemm, iroh-blobs -> genawaiter) with no maintained replacement upstream.
 unmaintained = "workspace"
+ignore = [
+    # crypto-bigint 0.5 timing leaks: reached only through age 0.12 -> hpke/p256, the P-256 tag
+    # recipients. nuee encrypts with age::x25519 alone, so no P-256 arithmetic runs on a secret.
+    # No 0.5.x fix exists and age has no release on crypto-bigint 0.7 yet; drop this with that release.
+    { id = "RUSTSEC-2026-0387", reason = "P-256 code path of age is never used (x25519 recipients only)" },
+]
 
 [licenses]
 version = 2

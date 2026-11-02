@@ -31,12 +31,22 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      # 10.x only renders with conventional-changelog-writer 9, and the latest
+      # @semantic-release/release-notes-generator (14.1.1) still ships writer 8.
+      - dependency-name: conventional-changelog-conventionalcommits
+        update-types: [version-update:semver-major]
   - package-ecosystem: npm
     directory: /e2e
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      # WebKit 27.2 (Playwright 1.64) applies the page's style-src-attr 'none' to the inline
+      # style of <select>'s own shadow tree, so every page with a <select> logs a CSP violation.
+      - dependency-name: '@playwright/test'
+        versions: ['1.64.x']
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -36,6 +36,14 @@ updates:
       # @semantic-release/release-notes-generator (14.1.1) still ships writer 8.
       - dependency-name: conventional-changelog-conventionalcommits
         update-types: [version-update:semver-major]
+      # Security updates for these always fail: the vulnerable copies (undici 6.29.0 under
+      # node-gyp, minimatch 10) are bundled inside npm, which semantic-release pulls in through
+      # @semantic-release/npm, and a bundle cannot be updated from here. The release never runs
+      # npm or node-gyp. Remove these once npm ships fixed copies.
+      - dependency-name: undici
+        versions: ['6.x']
+      - dependency-name: minimatch
+        update-types: [version-update:semver-major]
   - package-ecosystem: npm
     directory: /e2e
     schedule:

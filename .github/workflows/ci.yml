@@ -65,7 +65,7 @@ jobs:
             echo "CC_wasm32_unknown_unknown=$llvm_prefix/bin/clang"
             echo "AR_wasm32_unknown_unknown=$llvm_prefix/bin/llvm-ar"
           } >> "$GITHUB_ENV"
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: wasm-bindgen@0.2.128,wasm-pack@0.15.0,cargo-deny@0.20.2,cargo-audit@0.22.2,cargo-fuzz@0.13.2,shellcheck@0.11.0
       # install-action has no actionlint manifest at this pin; the Go module proxy checksums it.

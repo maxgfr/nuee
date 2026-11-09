@@ -56,8 +56,12 @@ pub(crate) fn lease_deadline(history: &Durations, manifest: &Manifest, b: Deadli
     } else {
         b.ceil
     };
+    let own = u64::from(manifest.deadline_ms).min(ceil.max(b.floor));
     let ms = match history.median() {
-        None => u64::from(manifest.deadline_ms).min(ceil.max(b.floor)),
+        None => own,
+        // How long one native command took says nothing about the next: a quick job must not
+        // get a long test suite killed after a few seconds.
+        Some(m) if is_exec(manifest.kind) => m.saturating_mul(3).clamp(own, ceil.max(own)),
         Some(m) => m.saturating_mul(3).clamp(b.floor.min(ceil), ceil),
     };
     u32::try_from(ms).unwrap_or(u32::MAX)
@@ -185,6 +189,15 @@ mod tests {
         assert_eq!(lease_deadline(&d, &m, B), 3_600_000);
         d.push(3_000_000);
         assert_eq!(lease_deadline(&d, &m, B), 9_000_000);
+    }
+
+    #[test]
+    fn a_quick_native_job_does_not_shorten_the_next_one() {
+        let mut m = manifest(TaskKind::Exec);
+        m.deadline_ms = 3_600_000;
+        let mut d = Durations::default();
+        d.push(1_700);
+        assert_eq!(lease_deadline(&d, &m, B), 3_600_000);
     }
 
     #[test]

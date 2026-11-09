@@ -12,20 +12,35 @@ nuee run demo:mandelbrot
 The web page is https://maxgfr.github.io/nuee/. It can join a swarm, run one, share a file or
 open any Nuée link, with nothing to install.
 
-## Keep a group, run your tests on it
+## Your team's machines as its CI
 
-Machines that stay together can form a permanent group, then split work between them:
+Machines that stay together form a permanent group that survives the loss of any of them, then
+build and test on each other, inside a sandbox:
 
 ```sh
 nuee group create "team"                       # prints a link that stays valid
 nuee group invite - <machine id> --name alice --keeper
 nuee group up - --allow-repo https://github.com/acme/app.git \
-  --allow-command 'npm test -- --shard={i}/{n}'
-nuee shard 8 --on - -- 'npm test -- --shard={i}/{n}'
+  --allow-command 'npm ci && npm run build' --exec-network
+
+nuee build --on - --keep dist -- 'npm ci && npm run build'   # dist/ comes back
+nuee shard 8 --on - -- 'npm test -- --shard={i}/{n}'         # eight pieces, on the team's machines
 ```
 
-Eight pieces of the test suite run on the team's own machines and their logs come back. See
-[docs/GROUPS.md](docs/GROUPS.md), including what allowing a repository means.
+Or from a workflow, with the Action in this repository:
+
+```yaml
+- uses: maxgfr/nuee@v0.5.0
+  with:
+    group: ${{ secrets.NUEE_GROUP }}
+    key: ${{ secrets.NUEE_KEY }}
+    command: npm ci && npm run build
+    keep: dist
+```
+
+See [docs/GROUPS.md](docs/GROUPS.md), including what allowing a repository means. The same group
+keeps files (`nuee group put`), serves sites, and works from Python and coding agents
+(`nuee mcp`).
 
 More recipes, each run as written: [real examples](https://maxgfr.github.io/nuee/docs/#examples).
 

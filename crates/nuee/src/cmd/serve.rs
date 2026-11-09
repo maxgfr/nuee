@@ -431,6 +431,14 @@ struct SiteRecord {
     link: String,
 }
 
+/// A file a group keeps. Its link names the keeper that wrote this record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct DriveFile {
+    id: String,
+    name: String,
+    link: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ServiceRecord {
     id: String,
@@ -439,6 +447,7 @@ struct ServiceRecord {
 
 #[derive(Debug, Default)]
 struct Book {
+    drive: Vec<DriveFile>,
     jobs: BTreeMap<u32, JobRecord>,
     /// Core job number ⇒ anchor job id, for running jobs.
     core: HashMap<u32, u32>,
@@ -898,17 +907,25 @@ impl Anchor {
             Err(e) => return err(400, e.to_string()),
         };
         let id = link.hash.to_string();
-        let files = if self.hub.complete_size(link.hash).await.ok().flatten() == Some(link.size) {
-            match self.open_site(&link).await {
+        let (net, hub) = if self.group.is_some() {
+            (&self.files_net, &self.files_hub)
+        } else {
+            (&self.net, &self.hub)
+        };
+        let files = if hub.complete_size(link.hash).await.ok().flatten() == Some(link.size) {
+            match self.open_site(hub, &link).await {
                 Ok(f) => f,
                 Err(e) => return err(422, format!("{e:#}")),
             }
         } else {
-            match nuee_store::get_bytes(&self.net, &self.hub, &link, |_, _| {}).await {
+            match nuee_store::get_bytes(net, hub, &link, |_, _| {}).await {
                 Ok(f) => f,
                 Err(e) => return err(502, format!("cannot fetch the site: {e}")),
             }
         };
+        if self.group.is_some() {
+            self.offer(&link);
+        }
         if let Err(e) = gateway.add_site(&id, strip_root(files)) {
             return err(422, e.to_string());
         }
@@ -926,8 +943,118 @@ impl Anchor {
         (201, json!({ "id": id, "path": format!("/s/{id}/") }))
     }
 
-    async fn open_site(&self, link: &FileLink) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
-        let cipher = self.hub.read(link.hash).await?;
+    fn offer(&self, link: &FileLink) {
+        self.acceptor.add(Offer {
+            access: link.access,
+            hash: link.hash,
+            size: link.size,
+        });
+    }
+
+    /// `link` as served by this machine.
+    fn own_link(&self, stored: &str) -> Option<String> {
+        let Ok(Link::File(mut link) | Link::Site(mut link)) = Link::parse(stored) else {
+            return None;
+        };
+        let mut providers = BoundedVec::new();
+        providers
+            .push(nuee_store::self_provider(&self.files_net))
+            .ok()?;
+        link.providers = providers;
+        Some(Link::File(link).to_url(&self.web_base))
+    }
+
+    /// `POST /drive`: keeps a copy of a file for the group.
+    async fn drive_put(&self, body: &[u8]) -> Reply {
+        #[derive(Deserialize)]
+        struct Req {
+            link: String,
+            name: String,
+        }
+        let req: Req = match serde_json::from_slice(body) {
+            Ok(r) => r,
+            Err(e) => return err(400, format!("invalid request: {e}")),
+        };
+        let Ok(Link::File(link)) = Link::parse(&req.link) else {
+            return err(400, "not a file link");
+        };
+        if let Err(e) = nuee_store::fetch_kept(&self.files_net, &self.files_hub, &link).await {
+            return err(502, format!("cannot fetch the file: {e}"));
+        }
+        if let Err(e) = self.sync(&self.files_hub).await {
+            return err(500, format!("{e:#}"));
+        }
+        self.offer(&link);
+        let file = DriveFile {
+            id: link.hash.to_string(),
+            name: req.name,
+            link: req.link,
+        };
+        let mut book = self.book.lock().await;
+        book.drive.retain(|f| f.name != file.name);
+        book.drive.push(file.clone());
+        if let Err(e) = self.save_list("drive.json", &book.drive) {
+            return err(500, format!("{e:#}"));
+        }
+        (201, json!({ "id": file.id, "name": file.name }))
+    }
+
+    /// `GET /drive`: the group's files and sites, with links that name this machine.
+    async fn drive_list(&self) -> Reply {
+        let book = self.book.lock().await;
+        let files: Vec<DriveFile> = book
+            .drive
+            .iter()
+            .filter_map(|f| {
+                Some(DriveFile {
+                    link: self.own_link(&f.link)?,
+                    ..f.clone()
+                })
+            })
+            .collect();
+        let sites: Vec<SiteRecord> = book
+            .sites
+            .iter()
+            .filter_map(|s| {
+                Some(SiteRecord {
+                    id: s.id.clone(),
+                    link: self.own_link(&s.link)?,
+                })
+            })
+            .collect();
+        (200, json!({ "files": files, "sites": sites }))
+    }
+
+    /// `DELETE /drive/<id or name>`.
+    async fn drive_remove(&self, id: &str) -> Reply {
+        let mut book = self.book.lock().await;
+        let Some(file) = book
+            .drive
+            .iter()
+            .find(|f| f.id == id || f.name == id)
+            .cloned()
+        else {
+            return err(404, "no such file");
+        };
+        book.drive.retain(|f| f.id != file.id);
+        if let Err(e) = self.save_list("drive.json", &book.drive) {
+            return err(500, format!("{e:#}"));
+        }
+        if let Ok(hash) = file.id.parse::<Hash>() {
+            self.acceptor.remove(&hash);
+            if let Err(e) = self.files_hub.untag(&nuee_store::blob_tag(hash)).await {
+                tracing::warn!("cannot drop {hash}: {e}");
+            }
+        }
+        (200, json!({ "removed": file.id }))
+    }
+
+    async fn open_site(
+        &self,
+        hub: &StoreHub,
+        link: &FileLink,
+    ) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
+        let cipher = hub.read(link.hash).await?;
         let tar = nuee_store::decrypt_bytes(&cipher, &nuee_store::AgeKey(link.key))?;
         Ok(nuee_store::unpack_bytes(&tar)?)
     }
@@ -1140,12 +1267,19 @@ impl Anchor {
                     None => err(404, "unknown job"),
                 }
             }
+            ("POST", ["drive"]) if self.group.is_some() => self.drive_put(body).await,
+            ("GET", ["drive"]) if self.group.is_some() => self.drive_list().await,
+            ("DELETE", ["drive", id]) if self.group.is_some() => self.drive_remove(id).await,
             ("POST", ["sites"]) => self.add_site(body, true).await,
             ("POST", ["services"]) => self.add_service(body, true).await,
             ("DELETE", [what @ ("sites" | "services"), id]) => self.remove(what, id).await,
-            (_, ["status" | "jobs" | "sites" | "services" | "roster", ..]) => {
-                err(405, "method not allowed")
-            }
+            (
+                _,
+                [
+                    "status" | "jobs" | "sites" | "services" | "roster" | "drive",
+                    ..,
+                ],
+            ) => err(405, "method not allowed"),
             _ => err(404, "not found"),
         }
     }
@@ -1641,6 +1775,12 @@ pub(crate) async fn run_anchor(
         }
         let resumed = book.core.len();
         book.jobs = jobs;
+        book.drive = load_list(&dir.join("drive.json"))?;
+        for f in &book.drive {
+            if let Ok(Link::File(l)) = Link::parse(&f.link) {
+                anchor.offer(&l);
+            }
+        }
         book.sites = load_list(&dir.join("sites.json"))?;
         book.services = load_list(&dir.join("services.json"))?;
         let (sites, services) = (book.sites.clone(), book.services.clone());
@@ -1769,13 +1909,13 @@ pub(crate) async fn run_anchor(
             if before.is_empty() {
                 std::future::pending::<()>().await;
             }
-            tokio::time::sleep(GIVE_WAY_POLL).await;
+            tokio::time::sleep(super::group::group_time(GIVE_WAY_POLL)).await;
         };
         tokio::select! {
             () = &mut stop => break,
             () = handoff => {
                 ctx.ui.note("the roster names another machine to coordinate; handing off");
-                tokio::time::sleep(HANDOFF_GRACE).await;
+                tokio::time::sleep(super::group::group_time(HANDOFF_GRACE)).await;
                 end = AnchorEnd::HandedOff;
                 break;
             }
@@ -1831,6 +1971,81 @@ pub(crate) async fn run_anchor(
         tracing::warn!("relay shutdown: {e}");
     }
     Ok(end)
+}
+
+/// How often a keeper that is not coordinating copies what the coordinator keeps.
+const COPY_POLL: Duration = Duration::from_secs(10);
+
+/// Keeps a copy of the group's files and sites in `dir`, where this keeper will find them if it
+/// has to take over. Never returns.
+pub(crate) async fn keep_copies(net: &Net, leader: &ServiceLink, dir: &Path, ctx: &Ctx) {
+    loop {
+        tokio::time::sleep(super::group::group_time(COPY_POLL)).await;
+        if let Err(e) = copy_once(net, leader, dir, ctx).await {
+            tracing::warn!("cannot copy the group's files yet: {e:#}");
+        }
+    }
+}
+
+async fn copy_once(net: &Net, leader: &ServiceLink, dir: &Path, ctx: &Ctx) -> anyhow::Result<()> {
+    super::group::delegate(net, leader, ctx).await?;
+    let (status, value) = admin(net, leader, "GET", "/drive", None).await?;
+    if status != 200 {
+        return Err(admin_error(status, &value));
+    }
+    let files: Vec<DriveFile> = serde_json::from_value(value["files"].clone())?;
+    let sites: Vec<SiteRecord> = serde_json::from_value(value["sites"].clone())?;
+    let same = |name: &str, new: Vec<String>| -> anyhow::Result<bool> {
+        let old: Vec<Value> = load_list(&dir.join(name))?;
+        let old: Vec<&str> = old.iter().filter_map(|v| v["id"].as_str()).collect();
+        Ok(old == new)
+    };
+    if same("drive.json", files.iter().map(|f| f.id.clone()).collect())?
+        && same("sites.json", sites.iter().map(|s| s.id.clone()).collect())?
+    {
+        return Ok(());
+    }
+    nuee_store::ensure_private_dir(dir).map_err(crate::store_failure)?;
+    let store = dir.join("files");
+    let hub = StoreHub::open(net, &store, HubConfig::default())
+        .await
+        .with_context(|| format!("opening the store in {}", store.display()))?;
+    let copied = async {
+        let links = files.iter().map(|f| f.link.as_str());
+        for link in links.chain(sites.iter().map(|s| s.link.as_str())) {
+            if let Ok(Link::File(link)) = Link::parse(link) {
+                nuee_store::fetch_kept(net, &hub, &link)
+                    .await
+                    .map_err(crate::store_failure)?;
+            }
+        }
+        // What the group no longer keeps stops being kept here.
+        let old: Vec<DriveFile> = load_list(&dir.join("drive.json"))?;
+        for gone in old.iter().filter(|o| !files.iter().any(|f| f.id == o.id)) {
+            if let Ok(hash) = gone.id.parse::<Hash>() {
+                hub.untag(&nuee_store::blob_tag(hash))
+                    .await
+                    .map_err(crate::store_failure)?;
+            }
+        }
+        hub.store()
+            .sync_db()
+            .await
+            .map_err(|e| anyhow::anyhow!("syncing the blob store: {e}"))?;
+        anyhow::Ok(())
+    }
+    .await;
+    if let Err(e) = hub.store().shutdown().await {
+        tracing::debug!("closing the store: {e}");
+    }
+    copied?;
+    write_private(&dir.join("drive.json"), &serde_json::to_vec_pretty(&files)?)?;
+    write_private(&dir.join("sites.json"), &serde_json::to_vec_pretty(&sites)?)?;
+    ctx.ui.emit(
+        "copied",
+        json!({ "files": files.len(), "sites": sites.len() }),
+    );
+    Ok(())
 }
 
 /// Whether one of these keepers answers, which only a coordinating keeper does.

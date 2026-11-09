@@ -36,6 +36,15 @@ const SILENT_POLLS: u32 = 3;
 /// Times one run of jobs starts over after losing its coordinator.
 const MAX_TAKEOVERS: u32 = 5;
 
+/// `base`, shortened by `NUEE_GROUP_TIME_PERCENT` (tests; default 100).
+pub(crate) fn group_time(base: Duration) -> Duration {
+    let percent = std::env::var("NUEE_GROUP_TIME_PERCENT")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(100);
+    base.saturating_mul(percent) / 100
+}
+
 /// Arguments of `nuee group`.
 #[derive(Debug, clap::Args)]
 pub struct Args {
@@ -78,6 +87,42 @@ enum Verb {
         #[arg(long, default_value = "ci")]
         name: String,
     },
+    /// Give a file or folder to the group: it stays available when this machine is off
+    Put {
+        /// The group link, or `-` to read it from stdin
+        link: String,
+        /// Files or folders
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Name shown to the group (default: the first path's name)
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// List the group's files and sites
+    Ls {
+        /// The group link, or `-` to read it from stdin
+        link: String,
+    },
+    /// Download one of the group's files
+    Get {
+        /// The group link, or `-` to read it from stdin
+        link: String,
+        /// Its name or id
+        name: String,
+        /// Where to unpack (default: the current directory)
+        #[arg(short, long, value_name = "DIR", default_value = ".")]
+        out: PathBuf,
+        /// Overwrite existing files
+        #[arg(long)]
+        force: bool,
+    },
+    /// Delete one of the group's files
+    Rm {
+        /// The group link, or `-` to read it from stdin
+        link: String,
+        /// Its name or id
+        name: String,
+    },
     /// Show the group's machines
     Status {
         /// The group link, or `-` to read it from stdin
@@ -113,6 +158,9 @@ struct UpArgs {
     /// Show this directory to native commands, read-only (repeat); home directories are hidden
     #[arg(long, value_name = "DIR")]
     exec_read: Vec<PathBuf>,
+    /// Serve the group's sites over HTTP on this address while coordinating
+    #[arg(long, value_name = "ADDR")]
+    gateway: Option<std::net::SocketAddr>,
     /// Token that reads a private --allow-repo; used to fetch it, never shown to the command
     #[arg(long, value_name = "FILE", requires = "allow_repo")]
     git_token_file: Option<PathBuf>,
@@ -192,7 +240,7 @@ async fn mains_lost(only_when: &[Condition]) {
         return std::future::pending().await;
     }
     while on_mains() {
-        tokio::time::sleep(POLL).await;
+        tokio::time::sleep(group_time(POLL)).await;
     }
 }
 
@@ -214,6 +262,15 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         } => invite(&link, &id, &name, keeper, ctx).await,
         Verb::Remove { link, id } => remove(&link, &id, ctx).await,
         Verb::CiKey { link, name } => ci_key(&link, &name, ctx).await,
+        Verb::Put { link, paths, name } => put(&link, &paths, name, ctx).await,
+        Verb::Ls { link } => ls(&link, ctx).await,
+        Verb::Get {
+            link,
+            name,
+            out,
+            force,
+        } => get(&link, &name, &out, force, ctx).await,
+        Verb::Rm { link, name } => rm(&link, &name, ctx).await,
         Verb::Status { link } => status(&link, ctx).await,
         Verb::Handoff { link, id } => handoff(&link, &id, ctx).await,
         Verb::Up(a) => up(a, ctx).await,
@@ -308,17 +365,158 @@ pub(crate) async fn member_session(
         .await?
         .ok_or_else(|| fail(exit::NETWORK, "no machine of the group is coordinating"))?;
     let target = service_link(&link, leader, &group_relay(&link).unwrap_or_default())?;
+    delegate(&net, &target, ctx).await?;
+    Ok((net, target))
+}
+
+/// Lets the throwaway key of `net` act for this machine on `target`.
+pub(crate) async fn delegate(net: &Net, target: &ServiceLink, ctx: &Ctx) -> anyhow::Result<()> {
     let key = ctx.secret()?;
     let sig = nuee_proto::sign_domain(&key, DOMAIN_DELEGATE, net.id().as_bytes());
     let body = json!({
         "member": key.public().to_string(),
         "sig": serve::hex(&nuee_proto::encode(&sig)?),
     });
-    let (status, value) = serve::admin(&net, &target, "POST", "/delegate", Some(&body)).await?;
+    let (status, value) = serve::admin(net, target, "POST", "/delegate", Some(&body)).await?;
     if status != 200 {
         return Err(serve::admin_error(status, &value));
     }
-    Ok((net, target))
+    Ok(())
+}
+
+/// A store for one command, apart from the one a running `group up` holds on this machine.
+async fn scratch_hub(net: &Net) -> anyhow::Result<(StoreHub, tempfile::TempDir)> {
+    let dir = tempfile::tempdir().map_err(|e| fail(exit::ERROR, format!("temp dir: {e}")))?;
+    let hub = StoreHub::open(net, dir.path(), HubConfig::default())
+        .await
+        .map_err(crate::store_failure)?;
+    Ok((hub, dir))
+}
+
+async fn put(
+    link: &str,
+    paths: &[PathBuf],
+    name: Option<String>,
+    ctx: &Ctx,
+) -> anyhow::Result<ExitCode> {
+    if let Some(missing) = paths.iter().find(|p| !p.exists()) {
+        return Err(fail(
+            exit::USAGE,
+            format!("{} does not exist", missing.display()),
+        ));
+    }
+    let name = name
+        .or_else(|| {
+            paths[0]
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .ok_or_else(|| fail(exit::USAGE, "this path has no name; pass --name"))?;
+    let (net, target) = member_session(link, ctx).await?;
+    let (hub, _dir) = scratch_hub(&net).await?;
+    let share = nuee_store::share_paths(&net, &hub, paths)
+        .await
+        .map_err(crate::store_failure)?;
+    for skipped in &share.skipped {
+        ctx.ui.note(&format!(
+            "skipped {} (links and special files are not kept)",
+            skipped.display()
+        ));
+    }
+    let url = Link::File(share.link.clone()).to_url(&ctx.global.web_base);
+    let body = json!({ "link": url, "name": name });
+    let reply = serve::admin(&net, &target, "POST", "/drive", Some(&body)).await;
+    share.shutdown().await.map_err(crate::store_failure)?;
+    let (status, value) = reply?;
+    if status != 201 {
+        return Err(serve::admin_error(status, &value));
+    }
+    ctx.ui.emit(
+        "kept",
+        json!({ "id": value["id"], "name": name, "size": share.link.size }),
+    );
+    ctx.ui.say(&format!("the group keeps {name}"));
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The group's files and sites, as its coordinator lists them.
+async fn drive(net: &Net, target: &ServiceLink) -> anyhow::Result<Value> {
+    let (status, value) = serve::admin(net, target, "GET", "/drive", None).await?;
+    if status != 200 {
+        return Err(serve::admin_error(status, &value));
+    }
+    Ok(value)
+}
+
+async fn ls(link: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
+    let (net, target) = member_session(link, ctx).await?;
+    let value = drive(&net, &target).await?;
+    let empty = Vec::new();
+    let files = value["files"].as_array().unwrap_or(&empty);
+    let sites = value["sites"].as_array().unwrap_or(&empty);
+    let names: Vec<Value> = files
+        .iter()
+        .map(|f| json!({ "id": f["id"], "name": f["name"] }))
+        .collect();
+    let site_ids: Vec<Value> = sites.iter().map(|s| s["id"].clone()).collect();
+    ctx.ui
+        .emit("drive", json!({ "files": names, "sites": site_ids }));
+    for f in files {
+        ctx.ui
+            .say(&crate::ui::clean(f["name"].as_str().unwrap_or_default()));
+    }
+    for s in sites {
+        ctx.ui.say(&format!(
+            "site /s/{}/",
+            s["id"].as_str().unwrap_or_default()
+        ));
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn get(
+    link: &str,
+    name: &str,
+    out: &std::path::Path,
+    force: bool,
+    ctx: &Ctx,
+) -> anyhow::Result<ExitCode> {
+    let (net, target) = member_session(link, ctx).await?;
+    let value = drive(&net, &target).await?;
+    let empty = Vec::new();
+    let file = value["files"]
+        .as_array()
+        .unwrap_or(&empty)
+        .iter()
+        .find(|f| f["name"] == name || f["id"] == name)
+        .ok_or_else(|| fail(exit::USAGE, format!("the group has no file {name:?}")))?;
+    let Ok(Link::File(file_link)) = Link::parse(file["link"].as_str().unwrap_or_default()) else {
+        return Err(fail(exit::ERROR, "the coordinator gave no valid link"));
+    };
+    let (hub, _dir) = scratch_hub(&net).await?;
+    let report = nuee_store::get(&net, &hub, &file_link, out, force, |_, _| {})
+        .await
+        .map_err(crate::store_failure)?;
+    for f in &report.files {
+        ctx.ui
+            .emit("file", json!({ "path": f.display().to_string() }));
+        ctx.ui.say(&crate::ui::clean(&f.display().to_string()));
+    }
+    ctx.ui
+        .emit("verified", json!({ "files": report.files.len() }));
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn rm(link: &str, name: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
+    let (net, target) = member_session(link, ctx).await?;
+    let path = format!("/drive/{name}");
+    let (status, value) = serve::admin(&net, &target, "DELETE", &path, None).await?;
+    if status != 200 {
+        return Err(serve::admin_error(status, &value));
+    }
+    ctx.ui.emit("removed", json!({ "id": value["removed"] }));
+    ctx.ui.say(&format!("the group no longer keeps {name}"));
+    Ok(ExitCode::SUCCESS)
 }
 
 /// One job of a run on the group, and the directory its results go to.
@@ -349,7 +547,7 @@ pub(crate) async fn run_jobs(
         ));
         ctx.close_nets().await;
         tokio::select! {
-            () = tokio::time::sleep(STAGGER) => {}
+            () = tokio::time::sleep(group_time(STAGGER)) => {}
             () = crate::ctrl_c() => return Err(fail(exit::CANCELLED, "stopped")),
         }
     }
@@ -429,7 +627,7 @@ fn service_link(link: &GroupLink, host: EndpointId, relay: &str) -> anyhow::Resu
 /// Asks one machine for its roster; `None` when it does not answer with a valid one.
 async fn ask(net: &Net, link: &GroupLink, target: &ServiceLink) -> Option<SignedRoster> {
     let reply = tokio::time::timeout(
-        ASK_TIMEOUT,
+        group_time(ASK_TIMEOUT),
         serve::admin(net, target, "GET", "/roster", None),
     );
     let (status, value) = reply.await.ok()?.ok()?;
@@ -579,7 +777,7 @@ async fn change_roster(
     let target = service_link(link, leader, &group_relay(link).unwrap_or_default())?;
     let body = json!({ "roster": serve::hex(&nuee_proto::encode(&signed)?) });
     let reply = tokio::time::timeout(
-        ASK_TIMEOUT,
+        group_time(ASK_TIMEOUT),
         serve::admin(&net, &target, "POST", "/roster", Some(&body)),
     )
     .await;
@@ -797,7 +995,7 @@ async fn roster_changed(
 ) {
     let mut silent = 0;
     loop {
-        tokio::time::sleep(POLL).await;
+        tokio::time::sleep(group_time(POLL)).await;
         let Some(signed) = ask(net, link, leader).await else {
             silent += 1;
             if silent == SILENT_POLLS {
@@ -830,7 +1028,7 @@ fn anchor_args(up: &UpArgs) -> serve::Args {
         relay_max_conns: None,
         relay_rate: None,
         store: None,
-        gateway: None,
+        gateway: up.gateway,
         gateway_scripts: false,
         allow: Vec::new(),
         allow_file: None,
@@ -873,7 +1071,7 @@ fn repo_rules(up: &UpArgs) -> anyhow::Result<Vec<RepoRule>> {
 async fn pause(ctx: &Ctx) -> bool {
     ctx.close_nets().await;
     tokio::select! {
-        () = tokio::time::sleep(RETRY) => false,
+        () = tokio::time::sleep(group_time(RETRY)) => false,
         () = crate::ctrl_c() => true,
     }
 }
@@ -937,7 +1135,7 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         if let (None, Some(place)) = (leader, place.filter(|p| *p > 0)) {
             ctx.ui
                 .note("no keeper is coordinating; taking over unless one before this one does");
-            let wait = STAGGER.saturating_mul(u32::try_from(place).unwrap_or(u32::MAX));
+            let wait = group_time(STAGGER).saturating_mul(u32::try_from(place).unwrap_or(u32::MAX));
             tokio::select! {
                 () = tokio::time::sleep(wait) => {}
                 () = crate::ctrl_c() => return Ok(ExitCode::SUCCESS),
@@ -1010,8 +1208,20 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         let target = service_link(&link, leader, &relay)?;
         let joined = super::join::run(joining(job), ctx);
         let changed = roster_changed(&net, &link, &target, roster.revision, ctx);
+        let copies_dir = roster_path(ctx, &link.group)?
+            .parent()
+            .map(|d| d.join("anchor"))
+            .unwrap_or_default();
+        let copies = async {
+            if place.is_some() {
+                serve::keep_copies(&net, &target, &copies_dir, ctx).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
         tokio::pin!(joined);
         tokio::pin!(changed);
+        tokio::pin!(copies);
         tokio::select! {
             result = &mut joined => match result {
                 Ok(_) => {}
@@ -1021,6 +1231,7 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 Err(e) => return Err(e),
             },
             () = &mut changed => ctx.ui.note("the group's coordinator or roster changed"),
+            () = &mut copies => {}
             () = mains_lost(&args.only_when) => ctx.ui.note("unplugged: leaving until --only-when holds"),
             () = crate::ctrl_c() => return Ok(ExitCode::SUCCESS),
         }

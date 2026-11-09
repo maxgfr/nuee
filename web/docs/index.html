@@ -181,6 +181,33 @@ shard-4-of-4: passed
 error: 1 of 4 shards failed; logs in nuee-out/shard-3f2a91c07b1d</code></pre>
 <p>A machine that disappears hands its shard to another. Each shard starts from a clean checkout, so the command must install and build what it needs, with <code>--exec-network</code> on <code>nuee group up</code> if that means downloading. Allowing a repository means trusting every commit that can be pushed to it: read <a href="#groups">Permanent groups</a> first.</p>
 
+<h3 id="ex-build"><a href="#ex-build">Build once for the whole team</a></h3>
+<p><strong>You need:</strong> a group, a pushed commit, and the build’s tools installed on the machines that accept it. The machines say what they accept:</p>
+<pre class="command"><code>nuee group up - --allow-repo https://github.com/acme/app.git --allow-command 'npm ci &amp;&amp; npm run build' --exec-network</code></pre>
+<p>Then, from any machine in the group:</p>
+<pre class="command"><code>nuee build --on - --keep dist -- 'npm ci &amp;&amp; npm run build'</code></pre>
+<pre class="output"><code>build passed: 12 files in .</code></pre>
+<p><code>dist/</code> and <code>nuee-build.log</code> come back to you. A teammate who builds the same commit gets that result in about a second. The build runs in a sandbox: an install script that goes for <code>~/.ssh</code> finds nothing. It does not make the code safe, so read <a href="#groups">Permanent groups</a> first.</p>
+
+<h3 id="ex-ci"><a href="#ex-ci">Use your machines from GitHub Actions</a></h3>
+<p><strong>You need:</strong> the same group, and two repository secrets. On the machine that created the group, make a key that can only submit jobs:</p>
+<pre class="command"><code>nuee group ci-key - --name github</code></pre>
+<p>Store it as <code>NUEE_KEY</code> and the group link as <code>NUEE_GROUP</code>, then add the step to a workflow. The hosted runner only waits, so the cheapest one will do:</p>
+<pre class="output"><code>- uses: maxgfr/nuee@v0.5.0
+  with:
+    group: ${{ secrets.NUEE_GROUP }}
+    key: ${{ secrets.NUEE_KEY }}
+    command: npm ci &amp;&amp; npm run build
+    keep: dist</code></pre>
+<p>With <code>shards: 8</code> and <code>{i}/{n}</code> in the command, the step cuts a test suite instead. Unlike the recipes above, this one has only been tried by running the step’s script by hand.</p>
+
+<h3 id="ex-drive"><a href="#ex-drive">Keep your group’s files on your own machines</a></h3>
+<p><strong>You need:</strong> a group with two keepers.</p>
+<pre class="command"><code>nuee group put - ./photos
+nuee group ls -
+nuee group get - photos -o ./back</code></pre>
+<p>The keepers copy the files, encrypted as you sent them, and you can turn your machine off. If the machine that coordinates dies, another keeper takes over with its copy. Keepers can decrypt what they keep.</p>
+
 <h3 id="ex-site"><a href="#ex-site">Hand over a static site</a></h3>
 <p><strong>You need:</strong> a folder with an <code>index.html</code>.</p>
 <pre class="command"><code>nuee site publish ./public</code></pre>
@@ -411,8 +438,8 @@ nuee group up -</code></pre>
 <p>A group can run your test suite between its machines. Each machine says exactly what it accepts, then anyone on the roster submits from a checkout whose commit is pushed:</p>
 <pre class="command"><code>nuee group up - --allow-repo https://github.com/acme/app.git --allow-command 'npm test -- --shard={i}/{n}'
 nuee shard 8 --on - -- 'npm test -- --shard={i}/{n}'</code></pre>
-<p>A failing test is a result: its log comes back and nothing is run again. A machine that disappears hands its shard to another. <code>--allow-repo</code> is off by default and requires a sandbox, but it does mean trusting every commit that can be pushed to that repository, and test results are not checked by recomputation.</p>
-<p>Today, if the coordinating machine dies the group waits for it, and a group uses one relay. Browsers cannot join a group yet. Details are in <a href="https://github.com/maxgfr/nuee/blob/main/docs/GROUPS.md">docs/GROUPS.md</a>.</p>
+<p>A failing test is a result: its log comes back and nothing is run again. A machine that disappears hands its shard to another. <code>--allow-repo</code> is off by default and requires a sandbox: the command cannot read home directories, this machine’s keys or other programs’ sockets, and writes only in its own directory and in a home kept per repository. It still means trusting every commit that can be pushed to that repository, and builds and test results are not checked by recomputation, so do not ship a release built this way without checking it.</p>
+<p>Keepers replace each other: when the coordinator dies, the first keeper still there takes over within about a minute, with its copy of the group’s files, and clients submit what is left to it. A job that was running starts over. A group uses one relay, and browsers cannot join a group yet. Details are in <a href="https://github.com/maxgfr/nuee/blob/main/docs/GROUPS.md">docs/GROUPS.md</a>.</p>
 
 <h3 id="anchor"><a href="#anchor">The anchor</a></h3>
 <p>Nothing in Nuée needs an anchor. <code>nuee serve --anchor</code> is <code>nuee</code> on a machine that stays on: a persistent coordinator that keeps jobs across restarts, its own relay, a store member for durable copies, and an HTTP gateway for sites. Run locally with a development relay:</p>

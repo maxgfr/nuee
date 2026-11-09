@@ -328,19 +328,34 @@ secrets of the group's `nuee/job/0` swarm and `nuee/http/0` API.
 `SignedRoster { bytes: postcard(Roster), sig }` (at most 64 KiB) is signed by the group key over
 `nuee/roster/0 || bytes`. `Roster { version, group, name, revision, members }`, each
 `Member { id, name, worker, store, keeper_rank: Option<u16> }`. Member ids and keeper ranks are
-unique and at least one member is a keeper. The keeper of lowest rank coordinates. A roster
-replaces another only with the same group and a higher revision.
+unique and at least one member is a keeper. A roster replaces another only with the same group and
+a higher revision.
+
+Only a coordinating keeper serves the API, so a keeper is coordinating if and only if it answers.
+A member uses the first keeper in rank order that answers. When none does, the keeper at place `p`
+in that order waits `p × 10 s`, asks again and takes over if still nobody answers. A coordinator
+keeps its role when an earlier keeper returns; if two ever coordinate, the later one in the order
+stops once its jobs are done. Clients submit again to the new coordinator.
 
 The coordinating keeper serves its anchor API (5.3) with three more routes. `GET /roster` returns
 `{roster: hex(postcard(SignedRoster))}` and `POST /roster` takes the same body; both are open to
 any holder of the link, the second because the signature decides. `POST /delegate`
 `{member, sig: hex(postcard(Signature))}` lets the calling key act for `member`, a machine on the
 roster, which signed `nuee/delegate/0 || caller`. Delegations end when the roster changes. Every
-other route needs a caller on the roster or delegated by one.
+other route needs a caller on the roster or delegated by one. A member with `worker: false`, and
+any key it delegates, is not admitted to the swarm and only reaches `/jobs...`, `GET /status` and
+`GET /roster`.
+
+`POST /drive {link, name}` makes the coordinator keep the ciphertext of an `F` link and
+`DELETE /drive/<id or name>` drops it. `GET /drive` returns `{files: [{id, name, link}],
+sites: [{id, link}]}` with links that name this coordinator's files endpoint; the other keepers poll
+it, copy what is new and take the list as theirs when they take over.
 
 A worker may advertise `repo@*` in `Caps::exec_allow`: it runs some commands at any commit of
 `repo` and checks each one itself. Such a command is the shard wrapper
-`["sh", "-c", SCRIPT, "nuee", "$NUEE_OUT", command]` with no environment and no GPU.
+`["sh", "-c", SCRIPT, "nuee", "$NUEE_OUT", command, kept...]` with no environment and no GPU, where
+`SCRIPT` is the shard script (no `kept`) or the build script (at most 8 relative paths; `$NUEE_OUT`
+becomes a tar of `out.log` and those paths).
 
 ## 8. Coordinator fingerprint
 

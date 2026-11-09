@@ -11,6 +11,7 @@ mod cmd {
     pub mod group;
     pub mod id;
     pub mod join;
+    pub mod mcp;
     pub mod pin;
     pub mod relay;
     pub mod run;
@@ -78,6 +79,7 @@ Environment:
   NUEE_CONFIG_DIR         identity key directory (default ~/.config/nuee)
   NUEE_KEY                identity key, 64 hex digits, instead of the one on disk (CI)
   NUEE_DATA_DIR           data directory (default ~/.local/share/nuee)
+  NUEE_GROUP_TIME_PERCENT shorten a group's waits, in percent (tests; default 100)
   NUEE_ONLINE_TIMEOUT_MS  how long to wait for the relay (default 10000)
   NUEE_DURABLE_ABSENT_MS  coordinators: replace a copy whose holder is gone this long (default 600000)
   NO_COLOR                disable colors";
@@ -147,6 +149,8 @@ enum Command {
     Shard(cmd::shard::Args),
     /// Build a commit on a machine of a group and bring back what it produced
     Build(cmd::build::Args),
+    /// Let a coding agent use one group, over the Model Context Protocol on stdin and stdout
+    Mcp(cmd::mcp::Args),
     /// Run a permanent group of machines
     Group(cmd::group::Args),
     /// Serve every pinned item until Ctrl-C
@@ -431,6 +435,7 @@ async fn dispatch(command: Command, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         Command::Group(a) => cmd::group::run(a, ctx).await,
         Command::Shard(a) => cmd::shard::run(a, ctx).await,
         Command::Build(a) => cmd::build::run(a, ctx).await,
+        Command::Mcp(a) => cmd::mcp::run(a, ctx).await,
         Command::Serve(a) => cmd::serve::run(a, ctx).await,
         Command::Train(a) => cmd::train::run(a, ctx).await,
         Command::Sweep(a) => cmd::sweep::run(a, ctx).await,

@@ -646,6 +646,24 @@ pub async fn get_bytes<P: FnMut(u64, u64)>(
     unpack_bytes(&tar)
 }
 
+/// Keeps the ciphertext of `link` in `hub`, without decrypting it. Does nothing if it is there.
+pub async fn fetch_kept(net: &Net, hub: &StoreHub, link: &FileLink) -> Result<(), StoreError> {
+    if hub.complete_size(link.hash).await? == Some(link.size) {
+        return Ok(());
+    }
+    fetch_ciphertext(
+        net,
+        hub,
+        link.providers.as_slice(),
+        &link.access,
+        link.hash,
+        link.size,
+        &mut |_, _| {},
+    )
+    .await?;
+    Ok(())
+}
+
 /// The erasure header `link` points to, if its blob (already in `hub`) is one.
 async fn set_header(
     hub: &StoreHub,

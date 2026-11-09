@@ -116,6 +116,7 @@ run "static" clippy cargo clippy --workspace --all-targets --locked -- -D warnin
 run "static" clippy-wasm32 clippy_wasm
 run "static test" build-tasks scripts/build-tasks.sh
 run "test" test cargo test --workspace --locked
+run "test" python-client python3 clients/python/test_nuee.py
 run "static" deny-audit supply_chain
 run "static" tasks-clippy tasks_clippy
 run "static" build-web scripts/build-web.sh

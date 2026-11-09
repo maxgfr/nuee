@@ -39,6 +39,7 @@ impl Node {
             .env_remove("XDG_CONFIG_HOME")
             .env_remove("XDG_DATA_HOME")
             .env_remove("NUEE_LOG")
+            .env("NUEE_GROUP_TIME_PERCENT", "20")
             .env("NO_COLOR", "1");
         c
     }
@@ -328,6 +329,80 @@ fn a_keeper_takes_over_when_the_coordinator_dies() {
     up_a2.event("welcome");
 }
 
+/// What a group keeps stays available without the machine that gave it, and without the keeper
+/// that coordinated.
+#[test]
+fn the_drive_survives_the_loss_of_its_coordinator() {
+    let relay_node = Node::new();
+    let (_relay, relay) = start_relay(&relay_node);
+    let (a, b, c) = (Node::new(), Node::new(), Node::new());
+
+    let mut create = a.with_relay(&relay);
+    create.args(["group", "create", "friends"]);
+    let (status, out) = finish(create);
+    assert!(status.success(), "group create failed: {out:?}");
+    let mut link = named(&out, "link")["link"]
+        .as_str()
+        .expect("link")
+        .to_owned();
+    let mut invite = a.with_relay(&relay);
+    invite.args(["group", "invite", &link, &b.id(), "--name", "b", "--keeper"]);
+    let (status, out) = finish(invite);
+    assert!(status.success(), "invite failed: {out:?}");
+    link = named(&out, "link")["link"]
+        .as_str()
+        .expect("link")
+        .to_owned();
+    let mut invite = a.with_relay(&relay);
+    invite.args(["group", "invite", &link, &c.id(), "--name", "c"]);
+    assert!(finish(invite).0.success(), "invite failed");
+
+    let up = |node: &Node| {
+        let mut cmd = node.with_relay(&relay);
+        cmd.args(["group", "up", &link, "--slots", "1"]);
+        Guard::spawn(cmd)
+    };
+    let mut up_a = up(&a);
+    up_a.event("anchor");
+    let up_b = up(&b);
+    up_b.event("welcome");
+
+    let photos = c.path().join("photos.txt");
+    std::fs::write(&photos, "souvenirs").expect("file");
+    let mut put = c.with_relay(&relay);
+    put.args(["group", "put", &link]).arg(&photos);
+    let (status, out) = finish(put);
+    assert!(status.success(), "put failed: {out:?}");
+    assert_eq!(named(&out, "kept")["name"], "photos.txt");
+
+    up_b.event("copied");
+    up_a.child.kill().expect("kill the coordinator");
+    up_a.child.wait().expect("reap");
+    up_b.event("anchor");
+
+    let mut ls = c.with_relay(&relay);
+    ls.args(["group", "ls", &link]);
+    let (status, out) = finish(ls);
+    assert!(status.success(), "ls failed: {out:?}");
+    assert_eq!(named(&out, "drive")["files"][0]["name"], "photos.txt");
+
+    let back = c.path().join("back");
+    let mut get = c.with_relay(&relay);
+    get.args(["group", "get", &link, "photos.txt", "-o"])
+        .arg(&back);
+    let (status, out) = finish(get);
+    assert!(status.success(), "get failed: {out:?}");
+    assert_eq!(
+        std::fs::read_to_string(back.join("photos.txt")).expect("the file"),
+        "souvenirs"
+    );
+
+    let mut rm = c.with_relay(&relay);
+    rm.args(["group", "rm", &link, "photos.txt"]);
+    let (status, out) = finish(rm);
+    assert!(status.success(), "rm failed: {out:?}");
+}
+
 /// A CI key builds on the group's machines, without being able to do anything else.
 #[test]
 fn a_ci_key_builds_and_brings_the_output_back() {
@@ -484,4 +559,56 @@ fn a_group_changes_coordinator_and_keeps_strangers_out() {
     // The former worker coordinates, and the former coordinator joins it.
     up_b.event("anchor");
     up_a.event("coordinator");
+}
+
+/// An agent sees the group's tools, and nothing it did not ask for reaches the group.
+#[test]
+fn the_mcp_server_lists_its_tools_and_refuses_unknown_ones() {
+    use std::io::Write as _;
+
+    let node = Node::new();
+    let mut cmd = node.cmd();
+    cmd.args(["mcp", "--on", "https://example.invalid/#/G/not-a-link"]);
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn");
+    let requests = [
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#,
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"rm_rf","arguments":{}}}"#,
+        r#"{"jsonrpc":"2.0","id":4,"method":"no/such/method"}"#,
+    ];
+    let mut stdin = child.stdin.take().expect("stdin");
+    for r in requests {
+        writeln!(stdin, "{r}").expect("write");
+    }
+    drop(stdin);
+    let out = child.wait_with_output().expect("output");
+    assert!(out.status.success());
+    let replies: Vec<Value> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("json"))
+        .collect();
+    assert_eq!(
+        replies.len(),
+        4,
+        "a notification gets no reply: {replies:?}"
+    );
+    assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18");
+    let tools: Vec<&str> = replies[1]["result"]["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .map(|t| t["name"].as_str().expect("name"))
+        .collect();
+    assert!(
+        tools.contains(&"build") && tools.contains(&"shard"),
+        "{tools:?}"
+    );
+    assert_eq!(replies[2]["error"]["code"], -32602);
+    assert_eq!(replies[3]["error"]["code"], -32601);
 }

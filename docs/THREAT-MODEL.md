@@ -116,6 +116,16 @@ Mitigations *(`nuee-exec::native`, `nuee` CLI `join`, `run`, `sweep`)*:
   end; `sandbox-exec` (macOS) or `bwrap` (Linux) is used when present, without network unless
   the worker passed `--exec-network`. One GPU job at a time (a file lock). *`checkout`,
   `env_key_allowed`, `detect_sandbox`, `gpu_lock`, `signal_group` in `nuee-exec::native`.*
+- A task does not read the machine's personal data. `/home`, `/root`, `/tmp`, `/run` and removable
+  media on Linux, `/Users`, `/Volumes` and the temporary directories on macOS are hidden, along
+  with this machine's Nuée keys and data; the toolchains `PATH` points into and `--exec-read`
+  directories are shown read-only. `$HOME` is a directory of its own for each repository, so a
+  repository's package caches last and never mix with another's. macOS also refuses other
+  programs' sockets, Launch Services, Apple events, `launchctl`, the keychain service, the
+  clipboard and signals to processes outside the task; Linux gets its own IPC, UTS, cgroup and
+  PID namespaces. *`NativeRunner::view`, `toolchains`, `macos_profile` in `nuee-exec::native`.*
+- A private repository's token (`--git-token-file`) goes to the `git fetch` that runs before the
+  task, in an environment variable, and is never given to the task. *`native::checkout`.*
 - `--exec-mirror URL=PATH` only changes where the allowed repository is fetched from (a
   local clone); it requires `--allow-exec` or `--exec-approvals` for the same URL and the commit is checked the same
   way. *`run::exec_mirror_source` in the CLI.*
@@ -123,9 +133,14 @@ Mitigations *(`nuee-exec::native`, `nuee` CLI `join`, `run`, `sweep`)*:
 
 Residual risk: **`exec` runs native code on machines that opted in.** The sandbox helpers are
 best effort and absent on some systems. Enabling `exec` for a revision means trusting that code.
-Accepted risk: even under the sandbox, an approved command can write `~/.cache` and
-`~/Library/Caches`, which model and kernel caches need (Hugging Face and MLX downloads, compiled
-kernels). Files it leaves there outlive the task and other programs may later trust them.
+Accepted risk: a `gpu = true` job keeps the real home, which drivers and model caches need, minus
+the secrets of `HOME_SECRETS`; it can write `~/.cache` and `~/Library/Caches` (Hugging Face and MLX
+downloads, compiled kernels), and files it leaves there outlive the task and other programs may
+later trust them. Accepted risk: on macOS the names and sizes of hidden files stay visible, since
+resolving a path needs them. Accepted risk: with `--exec-network` a task reaches the whole network,
+local services included, and can send out what it can read: the checkout and its repository's home.
+A kernel flaw or a bug in the sandbox helper escapes all of this; on Linux there is no seccomp
+filter.
 
 ### 4.3 Forged results and Sybil workers
 
@@ -455,15 +470,27 @@ Mitigations:
   key; delegations end with the roster. *`Gatekeeper`, `AdminHandler::stream`, `Anchor::delegate`.*
 - Workers only follow the keeper named by a verified roster. *`cmd::group::up`.*
 - A standing rule (`--allow-repo`) is off by default, needs a sandbox or `group up` refuses to
-  start, and matches one command in the shard wrapper, its placeholders standing for digits only,
-  with no environment and no GPU. *`nuee-exec::RepoRule::matches`, `join::native_runner`.*
+  start, and matches one command in the shard or build wrapper, its placeholders standing for
+  digits only, with no environment and no GPU. A build only brings back relative paths inside the
+  checkout; the machine that receives them refuses a path leaving its directory and creates no
+  links. *`nuee-exec::RepoRule::matches`, `kept_path_ok`, `join::native_runner`, `build::unpack`.*
+- A CI key (`group ci-key`) is a member with no work: it cannot join the swarm, and on the API only
+  submits and reads jobs. It is revoked by removing it from the roster. The Action refuses
+  `pull_request_target`, which would run a fork's code next to the key. *`submitter_may`,
+  `scripts/action.sh`.*
+- A keeper takes over only when no keeper answers, and members only follow keepers named by a
+  verified roster; two keepers coordinating at once cost duplicate work, since tasks are named by
+  their content, and the one later in the roster gives way. *`group::coordinator`,
+  `another_coordinates`.*
 
 Residual risk: **every keeper is trusted like an anchor**: it sees the group's secrets and every
 result, and can hand workers manifests. The roster tolerates machines that disappear, not keepers
-that lie. **Any machine on the roster can use the whole API**: jobs, sites and services.
-**`--allow-repo` trusts every commit that can be pushed to the repository**: its code runs in
-the sandbox, with the accepted risks of 4.2, and on the network with `--exec-network`. Shard
-results are not recomputed, so a member can report a false pass. Losing the group key freezes the
+that lie. **Any worker on the roster can use the whole API**: jobs, sites, services and the
+group's files, which every keeper can read. **`--allow-repo` trusts every commit that can be pushed
+to the repository**, pull requests from anyone with write access included: its code runs in the
+sandbox, with the accepted risks of 4.2, and on the network with `--exec-network`. Shard and build
+results are not recomputed, so a member can report a false pass or hand back a tampered build:
+do not publish a build's output as a release without checking it. Losing the group key freezes the
 roster, and whoever obtains it controls the group. The link's secret is still a bearer secret for
 `GET /roster`, which shows members' ids and names.
 

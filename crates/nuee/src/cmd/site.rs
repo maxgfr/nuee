@@ -22,9 +22,9 @@ pub enum Action {
     Publish {
         /// The site folder (with an index.html)
         dir: PathBuf,
-        /// Hand the site to this anchor's gateway (its link, or `-`) and return; the anchor
+        /// Hand the site to this anchor's or group's gateway (its link, or `-`) and return; it
         /// gets the decryption key and serves the plaintext
-        #[arg(long, value_name = "ANCHOR_LINK")]
+        #[arg(long, value_name = "LINK")]
         on: Option<String>,
     },
     /// Download a published site
@@ -59,12 +59,30 @@ async fn publish(dir: PathBuf, on: Option<&str>, ctx: &Ctx) -> anyhow::Result<Ex
         ctx.ui
             .note("no index.html in the folder: the preview will list files only");
     }
-    let anchor = on.map(crate::cmd::serve::anchor_link).transpose()?;
-    let net = match &anchor {
-        Some(link) => crate::cmd::serve::client_net(ctx, link).await?,
-        None => ctx.online_net().await?,
+    let on = on.map(crate::link_arg).transpose()?;
+    let group = on
+        .as_deref()
+        .is_some_and(|t| matches!(Link::parse(t), Ok(Link::Group(_))));
+    let (net, anchor) = match on.as_deref() {
+        Some(text) if group => {
+            let (net, target) = crate::cmd::group::member_session(text, ctx).await?;
+            (net, Some(target))
+        }
+        Some(text) => {
+            let link = crate::cmd::serve::anchor_link(text)?;
+            (crate::cmd::serve::client_net(ctx, &link).await?, Some(link))
+        }
+        None => (ctx.online_net().await?, None),
     };
-    let hub = ctx.hub(&net).await?;
+    // Next to a running `group up`, whose store this machine's data directory already holds.
+    let scratch = tempfile::tempdir().map_err(|e| fail(exit::ERROR, format!("temp dir: {e}")))?;
+    let hub = if group {
+        nuee_store::StoreHub::open(&net, scratch.path(), nuee_store::HubConfig::default())
+            .await
+            .map_err(crate::store_failure)?
+    } else {
+        ctx.hub(&net).await?
+    };
     let share = nuee_store::share_paths(&net, &hub, std::slice::from_ref(&dir))
         .await
         .map_err(crate::store_failure)?;

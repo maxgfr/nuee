@@ -38,6 +38,14 @@ nuee group up - --only-when ac,idle    # only take work on mains power, when not
 `nuee group status -` lists the machines. `nuee group remove - <id>` takes one out at once, and
 `nuee group handoff - <id>` moves the coordinator role, once no job is running.
 
+## When a machine dies
+
+Machines invited with `--keeper` replace each other. If the coordinator disappears, the first
+keeper still there takes over within about a minute, members follow it, and `nuee shard` and
+`nuee build` submit what is left to it. A keeper that comes back works for the one that took over.
+Give a group at least two keepers, and pass members the link printed by the last
+`group invite --keeper`, which lists them.
+
 Holding the link is not enough: a machine that is not on the roster is refused, and only the
 machine that created the group holds the key that changes the roster. That key is in
 `~/.config/nuee/groups/<group>/group.key`. Back it up: without it the group keeps running but
@@ -73,10 +81,62 @@ the tests need, and needs `--exec-network` to download anything.
 and nothing is run again. A machine that disappears is another matter: its shard goes to another
 machine. Submitting the same command on the same commit returns the results already there.
 
+Add `--fresh` to run again what already has a result, such as a flaky failure.
+
+## Build a commit, once for the whole team
+
+```sh
+nuee group up - --allow-repo https://github.com/acme/app.git \
+  --allow-command 'npm ci && npm run build' --exec-network
+nuee build --on - --keep dist -- 'npm ci && npm run build'
+```
+
+One machine builds the commit, and `dist/` and `nuee-build.log` come back here. Whoever builds the
+same commit with the same command then gets that result in a second, without building again. A
+failing build is a result too: its log comes back and the command exits with an error.
+
+For a private repository, give the machines a read-only token with
+`--git-token-file token.txt`. It is used to fetch the repository and never reaches the command.
+
+## From GitHub Actions
+
+The Action sends the commit to your group and waits: the job runs on your machines, and the hosted
+runner only waits, so the cheapest one will do.
+
+```sh
+nuee group ci-key - --name github   # on the machine that created the group; shown once
+```
+
+Store that key and the group link as the secrets `NUEE_KEY` and `NUEE_GROUP`, then:
+
+```yaml
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: maxgfr/nuee@v0.5.0
+        with:
+          group: ${{ secrets.NUEE_GROUP }}
+          key: ${{ secrets.NUEE_KEY }}
+          command: npm ci && npm run build
+          keep: dist
+      - uses: actions/upload-artifact@v7
+        with:
+          path: nuee-out/dist
+```
+
+Use `shards: 8` and `{i}/{n}` in the command for a test suite. `command` must be exactly what the
+machines allow, and they must allow the repository as `https://github.com/you/app.git`.
+
+A CI key can only submit jobs: it cannot work, change the roster or read the group's files, and
+`nuee group remove - <id>` revokes it. GitHub does not give secrets to pull requests from forks;
+the Action refuses `pull_request_target`, which would.
+
 ### What `--allow-repo` means
 
 It is the one place where a machine runs native code without approving each commit, so it is off
-by default and narrow:
+by default and narrow. `nuee shard` and `nuee build` share it:
 
 - only `nuee group up` can set it, and work is only taken from the coordinator named by a roster
   this machine verified;
@@ -84,17 +144,46 @@ by default and narrow:
 - the command must be exactly the one given to `--allow-command`, `{i}` and `{n}` standing for
   digits and nothing else; no environment, no GPU;
 - `sandbox-exec` or `bwrap` is required: without one, `group up` refuses to start;
+- the command cannot read home directories, this machine's Nuée keys or other programs' sockets,
+  and writes only in its own directory and in a home kept per repository, where `~/.npm` and the
+  like survive between runs. Tools installed under your home through `PATH` stay usable; show it
+  anything else with `--exec-read DIR`;
 - the network stays off unless `--exec-network` is given.
 
 **Allowing a repository means trusting every commit anyone can push to it**, since the command
 runs the repository's own code. The sandbox limits what that code reaches; it does not make it
-safe. Results are not checked by recomputation either: test runs are not reproducible bit for
-bit, and a machine on the roster can lie about them.
+safe: with `--exec-network` it can still send out the checkout, and it can reach services on your
+network. Results are not checked by recomputation either: builds and test runs are not reproducible
+bit for bit, and a machine on the roster can lie about them, so do not ship a release built this way
+without checking it.
+
+## The group's drive and sites
+
+```sh
+nuee group put - ./photos            # the group keeps it; this machine can go offline
+nuee group ls -
+nuee group get - photos -o ./back
+nuee group rm - photos
+nuee site publish ./public --on -    # needs a keeper running `group up - --gateway 0.0.0.0:8080`
+```
+
+Every keeper copies the files and sites within seconds, encrypted as they were sent, so they
+survive the loss of any keeper that has its copy. Keepers can decrypt them: choose them accordingly.
+
+## Python and coding agents
+
+`clients/python/nuee.py` is a one-file client (`Group(link).build(...)`, `.shard(...)`, `.put(...)`)
+over the `nuee` command. `nuee mcp --on <link>` gives a coding agent the same verbs over the Model
+Context Protocol. It is bound to that one group, and what actually runs is still decided by each
+machine's `--allow-command`.
 
 ## Limits today
 
-- If the coordinating machine dies, the group waits for it: other keepers do not take over by
-  themselves yet.
+- A group with one keeper still waits for it to come back.
+- A job that was running when its coordinator died starts over: only what its client submits again
+  runs, so the client has to be there. Services (`nuee expose`) are not moved to another machine.
+- The commands need their tools installed on each machine: `npm` has to exist there, and two
+  machines with different versions can give different results.
 - A group uses one relay, the one in its link. If that relay is down, the group is unreachable.
   Use `nuee relay` for anything but experiments.
 - Every machine on the roster can use the coordinator's whole API: jobs, sites and services.

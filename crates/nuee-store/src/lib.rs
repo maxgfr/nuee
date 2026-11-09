@@ -27,7 +27,8 @@ pub use pin::{PinEntry, PinProvider, Registry, pin_tag, serve_pins, with_provide
 #[cfg(not(target_family = "wasm"))]
 pub use pin::{pin, unpin_local};
 pub use share::{
-    FilesAcceptor, Offer, ServeHandle, ShareHandle, get_bytes, self_provider, share_bytes,
+    FilesAcceptor, Offer, ServeHandle, ShareHandle, fetch_kept, get_bytes, self_provider,
+    share_bytes,
 };
 #[cfg(not(target_family = "wasm"))]
 pub use share::{GetReport, get, share_paths};

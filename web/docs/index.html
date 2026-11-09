@@ -222,6 +222,14 @@ nuee group ls -
 nuee group get - photos -o ./back</code></pre>
 <p>The keepers copy the files, encrypted as you sent them, and you can turn your machine off. If the machine that coordinates dies, another keeper takes over with its copy. Keepers can decrypt what they keep.</p>
 
+<h3 id="ex-name"><a href="#ex-name">Host a site on your group, from any static host</a></h3>
+<p><strong>You need:</strong> a group with a machine running <code>nuee group up</code>, two keepers if the site must survive one of them, and a folder with an <code>index.html</code>.</p>
+<pre class="command"><code>nuee site publish ./public --on - --name blog</code></pre>
+<p>It prints a stable link. Publish again under the same name and the link keeps working, showing the new version. Anyone can open it on this page for an inert preview. To give the site its own address, with its scripts and all its pages, write a small loader and put it on GitHub Pages or any other static host:</p>
+<pre class="command"><code>nuee site loader - -o deploy/</code></pre>
+<p>The three files in <code>deploy/</code> never change. On a first visit the page fetches the site from the group’s machines, checks it against its hash and stores it in the browser; a service worker then serves it from your domain. A returning visitor sees the site even with every machine off, and picks up a new version on a later visit.</p>
+<p>A first visit needs a relay and one keeper online, and loads a few megabytes of code from this site. The link names the keepers of the day, so print it again after adding some. Search engines see only the loader, and the keepers can change what a name shows. For a large public site, a classic host remains the better choice.</p>
+
 <h3 id="ex-site"><a href="#ex-site">Hand over a static site</a></h3>
 <p><strong>You need:</strong> a folder with an <code>index.html</code>.</p>
 <pre class="command"><code>nuee site publish ./public</code></pre>

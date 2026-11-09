@@ -40,14 +40,25 @@ export function previewFrame(srcdoc) {
 /** @param {ViewContext} ctx */
 export function render({ app, root, route }) {
   document.documentElement.dataset.area = 'site';
-  const link = route.link ?? '';
+  let link = route.link ?? '';
   const errors = errorArea();
   const page = h('section', { class: 'page', 'aria-labelledby': 'site-title' }, h('h1', { id: 'site-title', i18n: 'site.title' }), errors.el);
   root.append(page);
   let busy = false;
   let gone = false;
 
-  app.bridge.call('parseLink', { link }).then(
+  /** What a stable name points to now; any other link stands for itself. */
+  const resolved = (/** @type {{ kind: string }} */ info) => {
+    if (info.kind !== 'name') return info;
+    return app.node()
+      .then(() => app.bridge.call('resolveName', { link }))
+      .then((found) => {
+        link = found.link;
+        return app.bridge.call('parseLink', { link });
+      });
+  };
+
+  app.bridge.call('parseLink', { link }).then(resolved).then(
     (info) => {
       if (info.kind !== 'site') {
         errors.showKey('err.link_kind');

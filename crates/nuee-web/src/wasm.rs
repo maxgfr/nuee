@@ -10,6 +10,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use iroh::protocol::Router;
 use js_sys::{Array, Function, Object, Promise, Reflect, Uint8Array};
+use n0_future::{FuturesUnordered, StreamExt as _};
 use nuee_core::{
     CoordinatorConfig, CoreError, Event, JobSpec, Outcome, RtcKind, SwarmStatus, WorkerConfig,
     WorkerEvent,
@@ -22,10 +23,10 @@ use nuee_net::{
 use nuee_proto::limits::{MAX_INLINE_INPUT, MAX_WASM_MEMORY};
 use nuee_proto::link::DEFAULT_BASE;
 use nuee_proto::{
-    ALPN_HTTP, ALPN_JOB, Asset, BoundedBytes, BoundedString, BoundedVec, Caps, Comparator,
-    EndpointId, FailKind, GpuCaps, Hash, Header, HttpRequest, HttpResponse, JobLink, Lease, Link,
-    MAX_HTTP_MSG, Manifest, PROOF_HTTP, PROTO_VERSION, Payload, SecretKey, TaskKind, VerifyMode,
-    VerifyPolicy, decode_with_limit,
+    ALPN_HTTP, ALPN_JOB, ALPN_NAME, Asset, BoundedBytes, BoundedString, BoundedVec, Caps,
+    Comparator, EndpointId, FailKind, GpuCaps, Hash, Header, HttpRequest, HttpResponse, JobLink,
+    Lease, Link, MAX_HTTP_MSG, Manifest, NameLink, PROOF_HTTP, PROTO_VERSION, Payload, Provider,
+    SecretKey, TaskKind, VerifyMode, VerifyPolicy, decode_with_limit,
 };
 use nuee_store::{HubConfig, ShareHandle, StoreHub, get_bytes, share_bytes};
 use tokio::sync::mpsc;
@@ -1016,6 +1017,13 @@ impl NueeNode {
         future_to_promise(async move { fetch(node, link, on_progress, true).await.map_err(js_err) })
     }
 
+    /// The site link an `N` link points to now, from whichever keeper answers first.
+    #[wasm_bindgen(js_name = resolveName)]
+    pub fn resolve_name(&self, link: String) -> Promise {
+        let node = self.inner.clone();
+        future_to_promise(async move { resolve_name(node, link).await.map_err(js_err) })
+    }
+
     /// Sends one console request over `nuee/http/0` to the host of an `X` link.
     pub fn http(&self, link: String, req: JsValue) -> Promise {
         let node = self.inner.clone();
@@ -1529,6 +1537,62 @@ fn headers_of(
         .map_err(|_| WebError::new(code::TOO_LARGE, "too many headers"))?;
     }
     Ok(out)
+}
+
+async fn ask_keeper(node: &Node, link: &NameLink, keeper: &Provider) -> Result<String, WebError> {
+    let request = HttpRequest {
+        proof: nuee_proto::proof(PROOF_HTTP, &link.public, &node.net.id(), &keeper.id),
+        method: bounded("GET", "the method")?,
+        path: bounded(&format!("/names/{}", link.name.as_str()), "the path")?,
+        headers: BoundedVec::new(),
+        body: BoundedBytes::default(),
+    };
+    if let Some(relay) = &keeper.relay {
+        node.net
+            .add_peer_relay_str(keeper.id, relay.as_str())
+            .map_err(|e| WebError::from(&e))?;
+    }
+    let conn = node
+        .net
+        .connect(keeper.id, ALPN_NAME)
+        .await
+        .map_err(|e| WebError::from(&e))?;
+    let io = |e: &dyn std::fmt::Display| WebError::new(code::SWARM_ENDED, e.to_string());
+    let (mut send, mut recv) = conn.open_bi().await.map_err(|e| io(&e))?;
+    let answer = nuee_net::console_exchange(&mut send, &mut recv, &request)
+        .await
+        .map_err(|e| io(&e))?;
+    let resp: HttpResponse = decode_with_limit(&answer, MAX_HTTP_MSG)
+        .map_err(|e| WebError::new(code::INTEGRITY, format!("malformed response: {e}")))?;
+    conn.close(0u32.into(), b"done");
+    if resp.status != 200 {
+        return Err(WebError::new(code::SWARM_ENDED, "no site has this name"));
+    }
+    let text = std::str::from_utf8(resp.body.as_slice()).unwrap_or_default();
+    js_sys::JSON::parse(text)
+        .ok()
+        .and_then(|body| Reflect::get(&body, &"link".into()).ok())
+        .and_then(|link| link.as_string())
+        .ok_or_else(|| WebError::new(code::INTEGRITY, "the keeper's answer has no link"))
+}
+
+async fn resolve_name(node: Rc<Node>, link: String) -> Result<JsValue, WebError> {
+    let Link::Name(name) = Link::parse(&link)? else {
+        return Err(WebError::new(code::LINK_KIND, "not a site name (N) link"));
+    };
+    let mut asks: FuturesUnordered<_> = name
+        .keepers
+        .iter()
+        .map(|keeper| ask_keeper(&node, &name, keeper))
+        .collect();
+    let mut last = WebError::new(code::SWARM_ENDED, "the link lists no keeper");
+    while let Some(answer) = asks.next().await {
+        match answer {
+            Ok(site) => return Ok(Obj::new().set("link", site).into()),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
 }
 
 async fn http(node: Rc<Node>, link: String, req: JsValue) -> Result<JsValue, WebError> {

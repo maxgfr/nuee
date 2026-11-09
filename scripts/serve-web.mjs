@@ -99,6 +99,8 @@ const server = createServer(async (req, res) => {
     'content-length': info.size,
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    // As GitHub Pages does; a site's loader on another origin needs the package.
+    'access-control-allow-origin': '*',
   });
   if (req.method === 'HEAD') {
     res.end();

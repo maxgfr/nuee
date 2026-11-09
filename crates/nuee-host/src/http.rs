@@ -319,12 +319,22 @@ async fn forward(port: u16, req: HttpRequest) -> Result<HttpResponse, Failed> {
 pub async fn http_request(
     net: &Net,
     link: &ServiceLink,
+    req: HttpRequest,
+) -> Result<HttpResponse, HostError> {
+    http_request_on(net, link, ALPN_HTTP, req).await
+}
+
+/// [`http_request`] over another protocol that speaks the same requests.
+pub async fn http_request_on(
+    net: &Net,
+    link: &ServiceLink,
+    alpn: &[u8],
     mut req: HttpRequest,
 ) -> Result<HttpResponse, HostError> {
     learn_host(net, link)?;
     req.proof = nuee_proto::proof(PROOF_HTTP, &link.secret, &net.id(), &link.host);
     let run = async {
-        let conn = net.connect(link.host, ALPN_HTTP).await?;
+        let conn = net.connect(link.host, alpn).await?;
         let (mut send, mut recv) = conn
             .open_bi()
             .await

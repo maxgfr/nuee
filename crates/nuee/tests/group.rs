@@ -349,6 +349,7 @@ fn the_drive_survives_the_loss_of_its_coordinator() {
     let relay_node = Node::new();
     let (_relay, relay) = start_relay(&relay_node);
     let (a, b, c) = (Node::new(), Node::new(), Node::new());
+    let stranger = Node::new();
 
     let mut create = a.with_relay(&relay);
     create.args(["group", "create", "friends"]);
@@ -386,13 +387,19 @@ fn the_drive_survives_the_loss_of_its_coordinator() {
     std::fs::write(site.join("index.html"), "<h1>our site</h1>").expect("page");
     let mut publish = c.with_relay(&relay);
     publish.args(["site", "publish"]).arg(&site);
-    publish.args(["--on", &link]);
+    publish.args(["--on", &link, "--name", "our-site"]);
     let (status, out) = finish(publish);
     assert!(status.success(), "publish failed: {out:?}");
     let path = named(&out, "anchored")["path"]
         .as_str()
         .expect("path")
         .to_owned();
+    let site_name = named(&out, "link")["link"]
+        .as_str()
+        .expect("link")
+        .to_owned();
+    assert!(site_name.contains("#/N/"), "{site_name}");
+    assert!(!site_name.contains(link.rsplit('/').next().expect("payload")));
 
     let photos = c.path().join("photos.txt");
     std::fs::write(&photos, "souvenirs").expect("file");
@@ -414,6 +421,15 @@ fn the_drive_survives_the_loss_of_its_coordinator() {
         .to_owned();
     let page = http_get(&gateway, &path);
     assert!(page.contains("<h1>our site</h1>"), "{page}");
+
+    // Someone who is not in the group follows the name to the keeper that took over.
+    let visited = stranger.path().join("visited");
+    let mut get = stranger.with_relay(&relay);
+    get.args(["site", "get", &site_name, "-o"]).arg(&visited);
+    let (status, out) = finish(get);
+    assert!(status.success(), "get by name failed: {out:?}");
+    let copy = std::fs::read_to_string(visited.join("site/index.html")).expect("the page");
+    assert!(copy.contains("<h1>our site</h1>"), "{copy}");
 
     let mut ls = c.with_relay(&relay);
     ls.args(["group", "ls", &link]);

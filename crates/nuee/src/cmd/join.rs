@@ -338,6 +338,12 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 "this is a group link: use `nuee group up`",
             ));
         }
+        Link::Name(_) => {
+            return Err(fail(
+                exit::USAGE,
+                "this is a site's name: use `nuee site get`",
+            ));
+        }
     };
     let fp = nuee_proto::fingerprint(&link.coordinator);
     ctx.ui.emit(

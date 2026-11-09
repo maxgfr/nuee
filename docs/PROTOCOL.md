@@ -21,6 +21,7 @@ connection is known before the first byte of application data.
 | `nuee/pin/0` | `ALPN_PIN` | Replication orders, erasure sets, holder lookups |
 | `nuee/tcp/0` | `ALPN_TCP` | Exposed TCP service tunnel |
 | `nuee/http/0` | `ALPN_HTTP` | Console HTTP requests |
+| `nuee/name/0` | `ALPN_NAME` | A group's read-only channel: what a site's stable name points to |
 
 `PROTO_VERSION = 0` is carried in every `Hello` and every manifest. The trailing `/0` of each ALPN
 is the major version of that sub-protocol.
@@ -299,6 +300,7 @@ refuse anything above them whatever the manifest says (`nuee-core::worker`).
 | `X` | `ServiceLink` | `host: EndpointId`, `relay: BoundedString<256>`, `secret: [u8;16]` |
 | `P` | `PinLink` | `FileLink` without `key` |
 | `G` | `GroupLink` | `group: EndpointId`, `secret: [u8;16]`, `bootstrap: BoundedVec<Provider,4>` (at least one) |
+| `N` | `NameLink` | `group: EndpointId`, `public: [u8;16]`, `name: BoundedString<63>` (`a-z`, `0-9`, `-`), `keepers: BoundedVec<Provider,4>` (at least one) |
 
 `key` is an age X25519 identity: whoever has an `F`/`S` link can decrypt; a `P` link only allows
 fetching ciphertext.
@@ -330,6 +332,11 @@ secrets of the group's `nuee/job/0` swarm and `nuee/http/0` API.
 `Member { id, name, worker, store, keeper_rank: Option<u16> }`. Member ids and keeper ranks are
 unique and at least one member is a keeper. A roster replaces another only with the same group and
 a higher revision.
+
+`nuee group public secret 0` gives the same way the secret of an `N` link. A coordinating keeper
+accepts console requests made with it on `nuee/name/0`; `GET /names/<name>` answers
+`{"link": "<S link served by this keeper>"}`, and anything else 403. Every keeper copies the name
+with the site.
 
 Only a coordinating keeper serves the API, so a keeper is coordinating if and only if it answers.
 A member uses the first keeper in rank order that answers. When none does, the keeper at place `p`

@@ -170,6 +170,24 @@ nuee site publish ./public --on -    # needs a keeper running `group up - --gate
 Every keeper copies the files and sites within seconds, encrypted as they were sent, so they
 survive the loss of any keeper that has its copy. Keepers can decrypt them: choose them accordingly.
 
+### A stable name, and any static host
+
+```sh
+nuee site publish ./public --on - --name blog   # prints a #/N/ link; needs no gateway
+nuee site loader - -o deploy/                   # three files for GitHub Pages or any static host
+```
+
+Publishing again under the same name changes what the link shows, not the link. It carries no
+secret of the group and only reads that one site, so it can be public. The page shows it as an
+inert preview. The loader's page fetches the site from the keepers, checks it, and a service worker
+serves it from the host's own origin with its scripts and all its pages. A returning visitor keeps
+the site with every machine off, and finds a new version within five minutes of a later visit.
+
+A first visit needs a relay and a keeper online. The link lists up to four keepers of the day, so
+print it again after changing them. The loader runs the Nuée package from `--web-base` (by default
+this project's GitHub Pages) on your origin: serve that package yourself if you do not want to
+depend on it. Search engines see only the loader.
+
 ## Python and coding agents
 
 `clients/python/nuee.py` is a one-file client (`Group(link).build(...)`, `.shard(...)`, `.put(...)`)
@@ -189,4 +207,5 @@ machine's `--allow-command`.
 - Every machine on the roster can use the coordinator's whole API: jobs, sites and services.
 - `--only-when idle` is checked before taking work, not during it: the work itself makes the
   machine busy.
-- Browsers cannot join a group yet. Opening a `G` link in the page says so.
+- Browsers cannot join a group yet. Opening a `G` link in the page says so; they can only visit
+  its named sites.

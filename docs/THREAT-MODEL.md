@@ -482,6 +482,12 @@ Mitigations:
   verified roster; two keepers coordinating at once cost duplicate work, since tasks are named by
   their content, and the one later in the roster gives way. *`group::coordinator`,
   `another_coordinates`.*
+- A site's stable link (`N`) carries a secret derived for that purpose, not the group's. It opens
+  a separate protocol, `nuee/name/0`, that only answers `GET /names/<name>` with a link to that
+  site: no jobs, roster, drive or other route. *`visitor_asks`, `GroupLink::public_secret`.*
+- The loader's service worker serves only what it stored, under its own scope, and passes every
+  other request to the network. A site's content is checked against its hash before it is stored.
+  *`cmd/loader/nuee-sw.js`, `nuee_store::get_bytes`.*
 
 Residual risk: **every keeper is trusted like an anchor**: it sees the group's secrets and every
 result, and can hand workers manifests. The roster tolerates machines that disappear, not keepers

@@ -28,7 +28,9 @@ pub use id::{
 };
 pub use job_toml::{JobError, JobKind, JobToml};
 pub use limits::LocalLimits;
-pub use link::{FileLink, GroupLink, JobLink, Link, LinkError, PinLink, ServiceLink};
+pub use link::{
+    FileLink, GroupLink, JobLink, Link, LinkError, NameLink, PinLink, ServiceLink, valid_site_name,
+};
 pub use manifest::{
     Asset, Comparator, DeltaCodec, EnvVar, ExecSpec, Manifest, ManifestError, SignedManifest,
     TrainSpec, TrainerKind, VerifyMode, VerifyPolicy,
@@ -46,3 +48,5 @@ pub const ALPN_PIN: &[u8] = b"nuee/pin/0";
 pub const ALPN_TCP: &[u8] = b"nuee/tcp/0";
 /// ALPN of console HTTP requests.
 pub const ALPN_HTTP: &[u8] = b"nuee/http/0";
+/// ALPN on which a group's keepers answer anyone asking what a site's name points to.
+pub const ALPN_NAME: &[u8] = b"nuee/name/0";

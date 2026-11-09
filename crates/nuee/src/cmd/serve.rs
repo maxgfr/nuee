@@ -429,6 +429,9 @@ impl JobRecord {
 struct SiteRecord {
     id: String,
     link: String,
+    /// The stable name that points to this site, on a group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
 }
 
 /// A file a group keeps. Its link names the keeper that wrote this record.
@@ -488,6 +491,8 @@ pub(crate) struct GroupContext {
     pub swarm_secret: [u8; 16],
     /// Secret of the API.
     pub admin_secret: [u8; 16],
+    /// Secret of the read-only channel that answers what a site's name points to.
+    pub public_secret: [u8; 16],
     /// Verified current roster.
     pub roster: SignedRoster,
     /// Where the roster is kept.
@@ -538,6 +543,12 @@ fn submitters(roster: &Roster) -> HashSet<EndpointId> {
         .filter(|m| !m.worker)
         .map(|m| m.id)
         .collect()
+}
+
+/// The site name a visitor asks for: the one thing the read-only channel answers.
+fn visitor_asks<'a>(method: &str, path: &'a str) -> Option<&'a str> {
+    let name = path.strip_prefix("names/")?;
+    (method == "GET" && nuee_proto::valid_site_name(name)).then_some(name)
 }
 
 /// What a key that only submits jobs can reach.
@@ -893,14 +904,25 @@ impl Anchor {
         #[derive(Deserialize)]
         struct Req {
             link: String,
+            #[serde(default)]
+            name: Option<String>,
         }
-        let Some(gateway) = &self.gateway else {
-            return err(409, "this anchor runs no gateway (see --gateway)");
-        };
         let req: Req = match serde_json::from_slice(body) {
             Ok(r) => r,
             Err(e) => return err(400, format!("invalid request: {e}")),
         };
+        // A named site is reached through its name, so it needs no gateway.
+        if self.gateway.is_none() && req.name.is_none() && save {
+            return err(409, "this anchor runs no gateway (see --gateway)");
+        }
+        if let Some(name) = &req.name
+            && (self.group.is_none() || !nuee_proto::valid_site_name(name))
+        {
+            return err(
+                400,
+                "a site's name is for a group: a-z, 0-9 and -, 63 at most",
+            );
+        }
         let link = match Link::parse(&req.link) {
             Ok(Link::Site(l)) => l,
             Ok(_) => return err(400, "not a site link"),
@@ -912,35 +934,69 @@ impl Anchor {
         } else {
             (&self.net, &self.hub)
         };
-        let files = if hub.complete_size(link.hash).await.ok().flatten() == Some(link.size) {
-            match self.open_site(hub, &link).await {
-                Ok(f) => f,
-                Err(e) => return err(422, format!("{e:#}")),
-            }
-        } else {
-            match nuee_store::get_bytes(net, hub, &link, |_, _| {}).await {
-                Ok(f) => f,
-                Err(e) => return err(502, format!("cannot fetch the site: {e}")),
-            }
-        };
         if self.group.is_some() {
+            if let Err(e) = nuee_store::fetch_kept(net, hub, &link).await {
+                return err(502, format!("cannot fetch the site: {e}"));
+            }
+            if let Err(e) = self.sync(hub).await {
+                return err(500, format!("{e:#}"));
+            }
             self.offer(&link);
         }
-        if let Err(e) = gateway.add_site(&id, strip_root(files)) {
-            return err(422, e.to_string());
+        let mut path = String::new();
+        if let Some(gateway) = &self.gateway {
+            let files = if hub.complete_size(link.hash).await.ok().flatten() == Some(link.size) {
+                match self.open_site(hub, &link).await {
+                    Ok(f) => f,
+                    Err(e) => return err(422, format!("{e:#}")),
+                }
+            } else {
+                match nuee_store::get_bytes(net, hub, &link, |_, _| {}).await {
+                    Ok(f) => f,
+                    Err(e) => return err(502, format!("cannot fetch the site: {e}")),
+                }
+            };
+            if let Err(e) = gateway.add_site(&id, strip_root(files)) {
+                return err(422, e.to_string());
+            }
+            path = format!("/s/{id}/");
         }
         if save {
             let mut book = self.book.lock().await;
-            book.sites.retain(|s| s.id != id);
+            // A name points to one site: the version it replaces goes away.
+            let replaced: Vec<String> = book
+                .sites
+                .iter()
+                .filter(|s| s.id != id && req.name.is_some() && s.name == req.name)
+                .map(|s| s.id.clone())
+                .collect();
+            book.sites
+                .retain(|s| s.id != id && !replaced.contains(&s.id));
+            if let Some(gateway) = &self.gateway {
+                for old in &replaced {
+                    gateway.remove_site(old);
+                }
+            }
             book.sites.push(SiteRecord {
                 id: id.clone(),
                 link: req.link,
+                name: req.name,
             });
             if let Err(e) = self.save_list("sites.json", &book.sites) {
                 return err(500, format!("{e:#}"));
             }
         }
-        (201, json!({ "id": id, "path": format!("/s/{id}/") }))
+        (201, json!({ "id": id, "path": path }))
+    }
+
+    /// `GET /names/<name>` on the read-only channel: the site's link, served by this machine.
+    async fn named_site(&self, name: &str) -> Reply {
+        let book = self.book.lock().await;
+        let site = book.sites.iter().find(|s| s.name.as_deref() == Some(name));
+        match site.and_then(|s| self.own_link(&s.link)) {
+            Some(link) => (200, json!({ "link": link })),
+            None => err(404, "no site has this name"),
+        }
     }
 
     fn offer(&self, link: &FileLink) {
@@ -1028,6 +1084,7 @@ impl Anchor {
                 Some(SiteRecord {
                     id: s.id.clone(),
                     link: self.own_link(&s.link)?,
+                    name: s.name.clone(),
                 })
             })
             .collect();
@@ -1303,6 +1360,8 @@ struct AdminHandler {
     anchor: Arc<Anchor>,
     secret: [u8; 16],
     gate: Arc<Admission>,
+    /// The channel of a group's visitors: it reads site names and nothing else.
+    public: bool,
 }
 
 impl std::fmt::Debug for AdminHandler {
@@ -1357,7 +1416,12 @@ impl AdminHandler {
                     }
                     None => true,
                 };
-                let (status, body) = if path == "delegate" && req.method.as_str() == "POST" {
+                let (status, body) = if self.public {
+                    match visitor_asks(req.method.as_str(), path) {
+                        Some(name) => self.anchor.named_site(name).await,
+                        None => err(403, "this channel only reads site names"),
+                    }
+                } else if path == "delegate" && req.method.as_str() == "POST" {
                     self.anchor.delegate(&peer, req.body.as_slice()).await
                 } else if limited && !submitter_may(req.method.as_str(), path) {
                     err(403, "this key can only submit jobs")
@@ -1580,6 +1644,7 @@ pub(crate) async fn run_anchor(
         .map_or_else(|| data.join("anchor"), |g| g.dir.clone());
     nuee_store::ensure_private_dir(&dir).map_err(crate::store_failure)?;
     nuee_store::ensure_private_dir(&dir.join("jobs")).map_err(crate::store_failure)?;
+    let public_secret = group.as_ref().map(|g| g.public_secret);
     let (admin_secret, swarm_secret) = match &group {
         Some(g) => (g.admin_secret, g.swarm_secret),
         None => {
@@ -1820,10 +1885,17 @@ pub(crate) async fn run_anchor(
         }
     }
 
+    let visitors = public_secret.map(|secret| AdminHandler {
+        anchor: anchor.clone(),
+        secret,
+        gate: Arc::new(Admission::new(AdmitConfig::default())),
+        public: true,
+    });
     let admin = AdminHandler {
         anchor: anchor.clone(),
         secret: admin_secret,
         gate: Arc::new(Admission::new(AdmitConfig::default())),
+        public: false,
     };
     if let Some(a) = &allow {
         a.write()
@@ -1841,8 +1913,12 @@ pub(crate) async fn run_anchor(
         )
         .accept(iroh_blobs::ALPN, hub.protocol())
         .accept(nuee_proto::ALPN_PIN, durability.clone())
-        .accept(ALPN_HTTP, admin)
-        .spawn();
+        .accept(ALPN_HTTP, admin);
+    let router = match visitors {
+        Some(handler) => router.accept(nuee_proto::ALPN_NAME, handler),
+        None => router,
+    }
+    .spawn();
 
     let gateway_addr = match (&gateway, args.gateway) {
         (Some(g), Some(addr)) => {
@@ -2009,9 +2085,12 @@ async fn copy_once(net: &Net, leader: &ServiceLink, dir: &Path, ctx: &Ctx) -> an
         let old: Vec<&str> = old.iter().filter_map(|v| v["id"].as_str()).collect();
         Ok(old == new)
     };
-    if same("drive.json", files.iter().map(|f| f.id.clone()).collect())?
-        && same("sites.json", sites.iter().map(|s| s.id.clone()).collect())?
-    {
+    let old_sites: Vec<SiteRecord> = load_list(&dir.join("sites.json"))?;
+    let same_sites = old_sites
+        .iter()
+        .map(|s| (&s.id, &s.name))
+        .eq(sites.iter().map(|s| (&s.id, &s.name)));
+    if same("drive.json", files.iter().map(|f| f.id.clone()).collect())? && same_sites {
         return Ok(());
     }
     nuee_store::ensure_private_dir(dir).map_err(crate::store_failure)?;
@@ -2212,6 +2291,43 @@ pub(crate) async fn admin(
     path: &str,
     body: Option<&Value>,
 ) -> anyhow::Result<(u16, Value)> {
+    console(net, link, ALPN_HTTP, method, path, body).await
+}
+
+/// The site link a stable name points to now, from whichever keeper answers first.
+pub(crate) async fn resolve_name(net: &Net, link: &nuee_proto::NameLink) -> anyhow::Result<String> {
+    let path = format!("/names/{}", link.name.as_str());
+    let asks = link.keepers.iter().map(|keeper| {
+        let path = path.clone();
+        Box::pin(async move {
+            let target = ServiceLink {
+                host: keeper.id,
+                relay: keeper.relay.clone().unwrap_or_default(),
+                secret: link.public,
+            };
+            let (status, value) =
+                console(net, &target, nuee_proto::ALPN_NAME, "GET", &path, None).await?;
+            if status != 200 {
+                return Err(admin_error(status, &value));
+            }
+            value["link"]
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| anyhow::anyhow!("the keeper's answer has no link"))
+        })
+    });
+    let (found, _) = futures_util::future::select_ok(asks).await?;
+    Ok(found)
+}
+
+async fn console(
+    net: &Net,
+    link: &ServiceLink,
+    alpn: &[u8],
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+) -> anyhow::Result<(u16, Value)> {
     let mut headers = BoundedVec::new();
     if body.is_some() {
         headers
@@ -2229,7 +2345,7 @@ pub(crate) async fn admin(
         body: BoundedBytes::try_from(body.map(Value::to_string).unwrap_or_default().into_bytes())
             .map_err(|_| fail(exit::USAGE, "request too large for the anchor"))?,
     };
-    let resp = nuee_host::http_request(net, link, req)
+    let resp = nuee_host::http_request_on(net, link, alpn, req)
         .await
         .map_err(|e| fail(exit::NETWORK, format!("the anchor did not answer: {e}")))?;
     let value: Value = serde_json::from_slice(resp.body.as_slice()).unwrap_or_else(
@@ -2477,15 +2593,13 @@ pub(crate) async fn publish_on_anchor(
     net: &Net,
     anchor: &ServiceLink,
     site_url: &str,
+    name: Option<&str>,
 ) -> anyhow::Result<String> {
-    let (status, v) = admin(
-        net,
-        anchor,
-        "POST",
-        "/sites",
-        Some(&json!({ "link": site_url })),
-    )
-    .await?;
+    let body = match name {
+        Some(name) => json!({ "link": site_url, "name": name }),
+        None => json!({ "link": site_url }),
+    };
+    let (status, v) = admin(net, anchor, "POST", "/sites", Some(&body)).await?;
     if status != 200 && status != 201 {
         return Err(admin_error(status, &v));
     }
@@ -2498,6 +2612,23 @@ pub(crate) async fn publish_on_anchor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visitors_only_read_site_names() {
+        assert_eq!(visitor_asks("GET", "names/blog"), Some("blog"));
+        for (method, path) in [
+            ("POST", "names/blog"),
+            ("GET", "names/a/b"),
+            ("GET", "names/"),
+            ("GET", "names/../roster"),
+            ("GET", "roster"),
+            ("GET", "drive"),
+            ("POST", "jobs"),
+            ("POST", "delegate"),
+        ] {
+            assert_eq!(visitor_asks(method, path), None, "{method} {path}");
+        }
+    }
 
     #[test]
     fn bundles_round_trip() {

@@ -21,6 +21,7 @@ test('link routes', () => {
   assert.deepEqual(parseHash(`#/X/${P}`), { view: 'service', link: `X/${P}` });
   assert.deepEqual(parseHash(`#/S/${P}`), { view: 'site', link: `S/${P}` });
   assert.deepEqual(parseHash(`#/G/${P}`), { view: 'group', link: `G/${P}` });
+  assert.deepEqual(parseHash(`#/N/${P}`), { view: 'site', link: `N/${P}` });
 });
 
 test('unknown and malformed hashes', () => {

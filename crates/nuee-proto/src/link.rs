@@ -78,6 +78,32 @@ pub struct GroupLink {
     pub bootstrap: BoundedVec<Provider, MAX_LINK_PROVIDERS>,
 }
 
+/// Longest name of a group's site.
+pub const MAX_SITE_NAME: usize = 63;
+
+/// Whether `name` can name a site: it travels in a path, so it is kept plain.
+pub fn valid_site_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_SITE_NAME
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// A site's stable name in a group (`N`). The link stays the same when the site changes, and it
+/// only lets its holder read that site: it carries no secret of the group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NameLink {
+    /// Key of the group, which the fingerprint is derived from.
+    pub group: EndpointId,
+    /// Secret of the keepers' read-only channel.
+    pub public: [u8; 16],
+    /// Name of the site.
+    pub name: BoundedString<MAX_SITE_NAME>,
+    /// The keepers to ask.
+    pub keepers: BoundedVec<Provider, MAX_LINK_PROVIDERS>,
+}
+
 /// Any link a user can paste.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
@@ -91,6 +117,8 @@ pub enum Link {
     Site(FileLink),
     /// Permanent group.
     Group(GroupLink),
+    /// Stable name of a group's site.
+    Name(NameLink),
 }
 
 /// A link cannot be read.
@@ -119,6 +147,11 @@ impl GroupLink {
     /// Secret of the group's API on `nuee/http/0`.
     pub fn admin_secret(&self) -> [u8; 16] {
         self.derive("nuee group admin secret 0")
+    }
+
+    /// Secret of the read-only channel on `nuee/name/0`.
+    pub fn public_secret(&self) -> [u8; 16] {
+        self.derive("nuee group public secret 0")
     }
 
     fn derive(&self, context: &str) -> [u8; 16] {
@@ -202,6 +235,7 @@ impl Link {
             Link::Service(_) => 'X',
             Link::Site(_) => 'S',
             Link::Group(_) => 'G',
+            Link::Name(_) => 'N',
         }
     }
 
@@ -212,6 +246,7 @@ impl Link {
             Link::File(l) | Link::Site(l) => encode_payload(l),
             Link::Service(l) => encode_payload(l),
             Link::Group(l) => encode_payload(l),
+            Link::Name(l) => encode_payload(l),
         };
         join(base, self.kind_letter(), &payload)
     }
@@ -227,6 +262,12 @@ impl Link {
             'G' => match decode_payload::<GroupLink>(payload)? {
                 l if l.bootstrap.is_empty() => Err(LinkError::Corrupt),
                 l => Ok(Link::Group(l)),
+            },
+            'N' => match decode_payload::<NameLink>(payload)? {
+                l if l.keepers.is_empty() || !valid_site_name(l.name.as_str()) => {
+                    Err(LinkError::Corrupt)
+                }
+                l => Ok(Link::Name(l)),
             },
             'P' => Err(LinkError::WrongKind),
             _ => Err(LinkError::Corrupt),
@@ -245,7 +286,7 @@ impl PinLink {
         let (kind, payload) = split(input)?;
         match kind {
             'P' => decode_payload(payload),
-            'J' | 'F' | 'X' | 'S' | 'G' => Err(LinkError::WrongKind),
+            'J' | 'F' | 'X' | 'S' | 'G' | 'N' => Err(LinkError::WrongKind),
             _ => Err(LinkError::Corrupt),
         }
     }

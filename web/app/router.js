@@ -25,6 +25,7 @@ export const LINK_VIEWS = new Map([
   ['X', 'service'],
   ['S', 'site'],
   ['G', 'group'],
+  ['N', 'site'],
 ]);
 
 const BASE32 = /^[A-Z2-7]+$/;

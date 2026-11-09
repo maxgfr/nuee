@@ -15,6 +15,7 @@ const USES = [
   ['home.uses.dev', 'nuee expose 3000', 'ex-dev'],
   ['home.uses.sweep', 'nuee sweep sweep.toml', 'ex-sweep'],
   ['home.uses.build', "nuee build --on - --keep dist -- 'npm ci && npm run build'", 'ex-build'],
+  ['home.uses.name', 'nuee site publish ./public --on - --name blog', 'ex-name'],
   ['home.uses.tests', 'nuee shard 4 --on - -- \'node --test --test-shard={i}/{n} test/*.test.mjs\'', 'ex-tests'],
 ];
 

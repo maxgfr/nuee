@@ -11,10 +11,10 @@ use std::time::Duration;
 use iroh::RelayUrl;
 use nuee_exec::RepoRule;
 use nuee_net::{Net, RelayChoice};
-use nuee_proto::limits::MAX_ROSTER;
+use nuee_proto::limits::{MAX_LINK_PROVIDERS, MAX_ROSTER};
 use nuee_proto::{
     BoundedString, BoundedVec, DOMAIN_DELEGATE, EndpointId, GroupLink, JobLink, Link, Manifest,
-    Member, PROTO_VERSION, Provider, Roster, SecretKey, ServiceLink, SignedRoster,
+    Member, NameLink, PROTO_VERSION, Provider, Roster, SecretKey, ServiceLink, SignedRoster,
 };
 use nuee_store::{HubConfig, StoreHub};
 use serde_json::{Value, json};
@@ -369,6 +369,38 @@ pub(crate) async fn member_session(
     Ok((net, target))
 }
 
+/// The stable link of a site called `name` in this group, listing its keepers today.
+pub(crate) async fn name_link(
+    net: &Net,
+    link_text: &str,
+    name: &str,
+    ctx: &Ctx,
+) -> anyhow::Result<NameLink> {
+    let link = parse_link(link_text)?;
+    let (_, roster) = newest_roster(net, &link, ctx)
+        .await?
+        .ok_or_else(|| fail(exit::NETWORK, "no machine of the group answered"))?;
+    let relay = group_relay(&link)
+        .map(|r| BoundedString::try_from(r.as_str()))
+        .transpose()
+        .map_err(|_| fail(exit::USAGE, "relay URL too long"))?;
+    let mut keepers = BoundedVec::new();
+    for keeper in roster.keepers().into_iter().take(MAX_LINK_PROVIDERS) {
+        keepers
+            .push(Provider {
+                id: keeper.id,
+                relay: relay.clone(),
+            })
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
+    Ok(NameLink {
+        group: link.group,
+        public: link.public_secret(),
+        name: BoundedString::try_from(name).map_err(|_| fail(exit::USAGE, "name too long"))?,
+        keepers,
+    })
+}
+
 /// Lets the throwaway key of `net` act for this machine on `target`.
 pub(crate) async fn delegate(net: &Net, target: &ServiceLink, ctx: &Ctx) -> anyhow::Result<()> {
     let key = ctx.secret()?;
@@ -602,8 +634,21 @@ fn group_relay(link: &GroupLink) -> Option<String> {
 /// with the group's signature, and one key on two endpoints at once would fight over the relay
 /// (`group status` next to a running `group up`).
 async fn control_net(ctx: &Ctx, link: &GroupLink) -> anyhow::Result<Net> {
+    throwaway_net(ctx, group_relay(link)).await
+}
+
+/// An endpoint for a visitor of a named site, who may be a machine of the group.
+pub(crate) async fn visitor_net(ctx: &Ctx, link: &NameLink) -> anyhow::Result<Net> {
+    let relay = link
+        .keepers
+        .iter()
+        .find_map(|p| p.relay.as_ref().map(|r| r.as_str().to_owned()));
+    throwaway_net(ctx, relay).await
+}
+
+async fn throwaway_net(ctx: &Ctx, group_relay: Option<String>) -> anyhow::Result<Net> {
     let key = config::fresh_key()?;
-    let relay = match (&ctx.global.relay, group_relay(link)) {
+    let relay = match (&ctx.global.relay, group_relay) {
         (None, Some(url)) => {
             let url: RelayUrl = url
                 .parse()
@@ -1166,6 +1211,7 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 id: link.group,
                 swarm_secret: link.swarm_secret(),
                 admin_secret: link.admin_secret(),
+                public_secret: link.public_secret(),
                 roster: signed,
                 roster_path: roster_path(ctx, &link.group)?,
                 dir: group_dir.join("anchor"),

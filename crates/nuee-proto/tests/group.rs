@@ -112,6 +112,50 @@ fn a_group_link_round_trips() {
     assert_eq!(PinLink::parse(&url), Err(LinkError::WrongKind));
 }
 
+fn name_link(name: &str, keepers: Vec<Provider>) -> Link {
+    Link::Name(NameLink {
+        group: key(1).public(),
+        public: [7; 16],
+        name: BoundedString::try_from(name).unwrap(),
+        keepers: keepers.try_into().unwrap(),
+    })
+}
+
+#[test]
+fn a_site_name_link_round_trips() {
+    let link = name_link("blog", vec![provider(2), provider(3)]);
+    let url = link.to_url(DEFAULT_BASE);
+    assert!(url.contains("#/N/"));
+    assert_eq!(Link::parse(&url).unwrap(), link);
+    assert_eq!(PinLink::parse(&url), Err(LinkError::WrongKind));
+}
+
+#[test]
+fn a_site_name_link_needs_a_keeper_and_a_plain_name() {
+    for bad in [
+        name_link("blog", Vec::new()),
+        name_link("../roster", vec![provider(2)]),
+        name_link("Blog", vec![provider(2)]),
+    ] {
+        assert_eq!(
+            Link::parse(&bad.to_url(DEFAULT_BASE)),
+            Err(LinkError::Corrupt)
+        );
+    }
+}
+
+#[test]
+fn the_secret_of_visitors_opens_nothing_else() {
+    let link = GroupLink {
+        group: key(1).public(),
+        secret: [4; 16],
+        bootstrap: vec![provider(2)].try_into().unwrap(),
+    };
+    assert_ne!(link.public_secret(), link.admin_secret());
+    assert_ne!(link.public_secret(), link.swarm_secret());
+    assert_ne!(link.public_secret(), link.secret);
+}
+
 #[test]
 fn a_group_link_with_no_machine_is_corrupt() {
     let url = group_link(Vec::new()).to_url(DEFAULT_BASE);

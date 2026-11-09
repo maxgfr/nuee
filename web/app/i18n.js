@@ -61,6 +61,7 @@ const en = {
   'home.uses.dev': 'Show a colleague what you are building, without deploying',
   'home.uses.sweep': 'Compare training settings on the lab’s machines',
   'home.uses.build': 'Build once for the whole team, on your own machines',
+  'home.uses.name': 'Host a site on your group, and serve it from any static host',
   'home.uses.tests': 'Run your test suite on the team’s own machines',
   'home.cli.title': 'On a computer, use the command line',
   'home.cli.body': 'The nuee command runs the same swarms, natively, hosts larger jobs, and keeps a permanent group of machines that can run your test suite between them.',

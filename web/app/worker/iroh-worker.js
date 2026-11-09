@@ -19,7 +19,8 @@
  */
 const scope = /** @type {never} */ (self);
 
-const version = new URL(scope.location.href).searchParams.get('v') ?? '';
+// From this module's own address: a page on another origin starts it through a blob: worker.
+const version = new URL(import.meta.url).searchParams.get('v') ?? '';
 
 /** @type {Promise<typeof import('../api')>} */
 const ready = (async () => {
@@ -255,6 +256,8 @@ async function handle(op, args, id) {
       });
       return [got, transfer];
     }
+    case 'resolveName':
+      return [await needNode().resolveName(/** @type {OpMap['resolveName']['args']} */ (args).link), []];
     case 'http': {
       const a = /** @type {OpMap['http']['args']} */ (args);
       const r = await needNode().http(a.link, a.req ?? {});

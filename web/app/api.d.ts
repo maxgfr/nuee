@@ -62,6 +62,8 @@ export class NueeNode {
   fetchSite(link: string, onProgress?: (got: number, total: number) => void): Promise<FetchedFiles>;
   /** One console request to the host of an `X` link over `nuee/http/0`. */
   http(link: string, req: HttpReq): Promise<HttpResp>;
+  /** The site link an `N` link points to now, from whichever keeper answers first. */
+  resolveName(link: string): Promise<{ link: string }>;
   /** Stops serving and closes the endpoint. Sessions started from this node stop working. */
   close(): Promise<void>;
 }
@@ -360,7 +362,7 @@ export type NueeEvent =
 
 export type Op =
   | 'start' | 'host' | 'join' | 'approve' | 'submit' | 'forget' | 'setSlots' | 'setWebrtc' | 'sendRtc'
-  | 'stop' | 'share' | 'fetchFile' | 'fetchSite' | 'http' | 'status' | 'parseLink'
+  | 'stop' | 'share' | 'fetchFile' | 'fetchSite' | 'resolveName' | 'http' | 'status' | 'parseLink'
   | 'fingerprint' | 'qrSvg' | 'validateModule' | 'version' | 'laneOpen' | 'laneFrame' | 'laneClosed';
 
 /** Arguments and resolved value of each op. `session` is the id returned by host/join/share. */
@@ -384,6 +386,7 @@ export interface OpMap {
   share: { args: { files: NamedBytes[] }; value: { session: number; link: string } };
   fetchFile: { args: { link: string; progress?: number }; value: FetchedFiles };
   fetchSite: { args: { link: string; progress?: number }; value: FetchedFiles };
+  resolveName: { args: { link: string }; value: { link: string } };
   http: { args: { link: string; req: HttpReq }; value: HttpResp };
   status: { args: { session: number }; value: SwarmStatus };
   parseLink: { args: { link: string }; value: LinkInfo };

@@ -23,7 +23,7 @@ pub mod gateway;
 pub mod http;
 pub mod tcp;
 
-pub use http::{HttpHandler, http_request};
+pub use http::{HttpHandler, http_request, http_request_on};
 pub use tcp::{ExposeHandler, Tunnel, TunnelClient, connect_tunnel, splice};
 
 /// Most tunnels open at once on one exposed service.

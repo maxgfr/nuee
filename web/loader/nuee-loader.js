@@ -208,9 +208,12 @@ async function main() {
   const now = Date.now();
   const since = (key) => now - Number(localStorage.getItem(key) ?? 0);
   if (before && (since(LAST_CHECK) < CHECK_EVERY || since(LAST_TRY) < RETRY_EVERY)) return;
-  localStorage.setItem(LAST_TRY, String(now));
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Stop(NO_KEEPER)), GIVE_UP));
-  const changed = await Promise.race([check(before), timeout]);
+  // Only a check that failed delays the next one: leaving the page in the middle of one does not.
+  const changed = await Promise.race([check(before), timeout]).catch((e) => {
+    localStorage.setItem(LAST_TRY, String(Date.now()));
+    throw e;
+  });
   localStorage.setItem(LAST_CHECK, String(Date.now()));
   if (changed && !before) location.reload();
 }

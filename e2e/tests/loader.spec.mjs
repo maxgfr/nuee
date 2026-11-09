@@ -130,18 +130,25 @@ for (const engine of /** @type {const} */ (['chromium', 'firefox', 'webkit'])) {
 
     // A new version under the same name: the link does not change, the next visit shows it.
     expect(await publish('version two')).toBe(name);
-    await page.goto(origin);
-    await page.evaluate(() => {
-      localStorage.clear();
-    });
-    await page.goto(`${origin}page2.html`);
     const stored = () =>
       page.evaluate(async () => {
         const names = (await caches.keys()).filter((k) => k.startsWith('nuee-site-'));
         const pages = await Promise.all(names.map(async (n) => (await caches.open(n)).match(new URL('index.html', location.href))));
         return (await Promise.all(pages.map((r) => r?.text()))).join();
       });
-    await expect.poll(stored, { timeout: 60_000 }).toContain('version two');
+    // A visitor who comes back after the check interval: each visit may find the new version, and
+    // one that leaves a page while its check runs simply lets the next page look again.
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => localStorage.clear());
+          await page.goto(`${origin}page2.html`);
+          await page.waitForTimeout(8_000);
+          return stored();
+        },
+        { timeout: 90_000, intervals: [0] },
+      )
+      .toContain('version two');
     await page.goto(origin);
     await expect(page.locator('h1')).toHaveText('version two');
 

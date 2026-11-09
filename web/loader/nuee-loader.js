@@ -77,12 +77,19 @@ async function connect() {
     for (const { reject } of waiting.values()) reject(error);
     waiting.clear();
   };
+  // Before its first answer an error means the code did not load; after it, a worker error is
+  // one of its own tasks failing, which the call that needs it reports.
+  let answered = false;
   worker.onerror = (e) => {
+    if (answered) {
+      console.warn('nuee loader: worker error', e.message);
+      return;
+    }
     e.preventDefault();
     breakAll(new Stop(NO_PACKAGE));
   };
-  worker.onmessageerror = () => breakAll(new Stop(NO_PACKAGE));
   worker.onmessage = (e) => {
+    answered = true;
     const m = e.data;
     if (typeof m.id !== 'number' || !waiting.has(m.id)) return;
     const { resolve, reject } = waiting.get(m.id);

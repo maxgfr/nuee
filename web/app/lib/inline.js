@@ -63,7 +63,10 @@ export function mimeOf(name) {
  */
 export function pickPage(files) {
   const names = files.map((f) => f.name);
-  if (names.includes('index.html')) return 'index.html';
+  // A published folder sits in a directory of its own: its index is the shallowest one.
+  const depth = (/** @type {string} */ n) => n.split('/').length;
+  const index = names.filter((n) => n === 'index.html' || n.endsWith('/index.html')).sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
+  if (index[0]) return index[0];
   const pages = names.filter((n) => /\.html?$/i.test(n)).sort();
   return pages[0] ?? null;
 }

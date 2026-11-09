@@ -142,6 +142,8 @@ test('without index.html the first .html page is used', () => {
   assert.equal(pickPage(files), 'b.htm');
   assert.equal(pickPage(site({ 'index.html': '', 'a.html': '' })), 'index.html');
   assert.equal(pickPage(site({ 'x.css': '' })), null);
+  // A folder published from the command line: its index, not the first page by name.
+  assert.equal(pickPage(site({ 'public/about.html': '', 'public/index.html': '', 'public/docs/index.html': '' })), 'public/index.html');
   assert.match(buildPreview(files).html, /<p>b<\/p>/);
   assert.throws(() => buildPreview(site({ 'x.css': '' })), InlineError);
 });

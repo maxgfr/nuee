@@ -225,6 +225,7 @@ nuee group get - photos -o ./back</code></pre>
 <h3 id="ex-name"><a href="#ex-name">Host a site on your group, from any static host</a></h3>
 <p><strong>You need:</strong> a group with a machine running <code>nuee group up</code>, two keepers if the site must survive one of them, and a folder with an <code>index.html</code>.</p>
 <pre class="command"><code>nuee site publish ./public --on - --name blog</code></pre>
+<p>To see it first without installing anything, <a href="../#/publish">host the sample site from a tab</a>: the tab plays the group.</p>
 <p>It prints a stable link. Publish again under the same name and the link keeps working, showing the new version. Anyone can open it on this page for an inert preview. To give the site its own address, with its scripts and all its pages, write a small loader and put it on GitHub Pages or any other static host:</p>
 <pre class="command"><code>nuee site loader - -o deploy/</code></pre>
 <p>The three files in <code>deploy/</code> never change. On a first visit the page fetches the site from the group’s machines, checks it against its hash and stores it in the browser; a service worker then serves it from your domain. A returning visitor sees the site even with every machine off, and picks up a new version on a later visit.</p>

@@ -1,10 +1,11 @@
 // A site named on a group, delivered from any static host: the loader on one origin, the Nuée
 // package on another, the content from the group's machines.
+import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
-import { Harness } from './helpers.mjs';
+import { Harness, pageUrl } from './helpers.mjs';
 
 /** @type {Harness} */
 let h;
@@ -51,6 +52,48 @@ function serve(dir) {
     });
   });
 }
+
+test('a tab hosts the sample site under a name that the CLI, the page and the loader follow', async () => {
+  const browser = await h.browser('chromium');
+  const tab = await h.page(browser, 'publisher');
+  await tab.goto(pageUrl('#/publish'));
+  await tab.getByRole('button', { name: 'Publish the sample site' }).click();
+  const field = tab.locator('#share-link');
+  await expect(field).toHaveValue(/#\/N\//, { timeout: 60_000 });
+  const name = await field.inputValue();
+
+  // The command line follows the name to the tab.
+  const dir = h.dir();
+  const get = h.cli(['site', 'get', '-', '-o', path.join(dir, 'got')], { dir, stdin: `${name}\n` });
+  expect(await get.exit(60_000), get.stderr).toBe(0);
+  expect(readFileSync(path.join(dir, 'got', 'site', 'index.html'), 'utf8')).toContain('This page has no server');
+
+  // Another page shows the inert preview, where the site's script does not run.
+  const visitor = await h.page(browser, 'visitor');
+  await visitor.goto(pageUrl(name));
+  await visitor.getByRole('button', { name: 'Download and preview' }).click();
+  await expect(visitor.getByText('Verified: the files match the link')).toBeVisible({ timeout: 60_000 });
+  const frame = await (await visitor.locator('iframe.preview-frame').elementHandle())?.contentFrame();
+  expect(frame).toBeTruthy();
+  if (!frame) return;
+  await expect(frame.locator('h1')).toHaveText('This page has no server');
+  await expect(frame.locator('#where')).toHaveText('With the loader, this page runs on the address of whoever hosts it.');
+
+  // The loader the page hands out serves it, script included, from another origin.
+  const [saved] = await Promise.all([tab.waitForEvent('download'), tab.getByRole('button', { name: 'Download the loader' }).click()]);
+  const files = path.join(dir, 'loader');
+  mkdirSync(files);
+  const tar = path.join(dir, 'loader.tar');
+  await saved.saveAs(tar);
+  expect(spawnSync('tar', ['-xf', tar, '-C', files]).status).toBe(0);
+  const origin = await serve(files);
+  const site = await h.page(browser, 'site');
+  await site.goto(origin);
+  await expect(site.locator('#where')).toContainText(`runs on ${origin.replace(/\/$/, '')}`, { timeout: 90_000 });
+  await site.locator('a').click();
+  await expect(site.locator('h1')).toHaveText('How it works');
+  h.checkPages();
+});
 
 for (const engine of /** @type {const} */ (['chromium', 'firefox', 'webkit'])) {
   test(`${engine}: a named site runs from a static host and follows its name`, async () => {

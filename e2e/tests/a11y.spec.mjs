@@ -39,6 +39,7 @@ const PAGES = [
   { name: 'join', url: () => pageUrl(links.job), ready: (p) => p.locator('.consent'), action: (p) => p.getByRole('button', { name: 'Contribute' }) },
   { name: 'file', url: () => pageUrl(links.file), ready: (p) => p.locator('#main .card'), action: (p) => p.getByRole('button', { name: 'Download' }) },
   { name: 'share', url: () => pageUrl('#/share'), ready: (p) => p.locator('#share-files'), action: (p) => p.locator('#share-files') },
+  { name: 'publish', url: () => pageUrl('#/publish'), ready: (p) => p.locator('#publish-folder'), action: (p) => p.getByRole('button', { name: 'Publish the sample site' }) },
   { name: 'about', url: () => pageUrl('#/about'), ready: (p) => p.locator('#main h1'), action: (p) => p.locator('.nav a[href="#/about"]') },
   // The documentation pages are static: the primary action is the first Copy button docs.js adds.
   { name: 'docs-en', url: () => new URL('docs/', services().web).href, ready: (p) => p.locator('#main h1'), action: (p) => p.locator('.copy-btn').first() },

@@ -99,6 +99,7 @@ export function render({ app, root, route }) {
           h('li', null, h('a', { href: `docs/#${anchor}`, i18n: key }), h('code', { class: 'mono cmd', text: command })),
         ),
       ),
+      h('p', null, h('a', { href: '#/publish', class: 'btn secondary', i18n: 'home.uses.publish' })),
     ),
     h(
       'section',

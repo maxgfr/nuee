@@ -8,9 +8,10 @@ use serde_json::json;
 
 use crate::{Ctx, exit, fail};
 
-const LOADER_PAGE: &str = include_str!("loader/index.html");
-const LOADER_SCRIPT: &str = include_str!("loader/nuee-loader.js");
-const LOADER_WORKER: &str = include_str!("loader/nuee-sw.js");
+// The same files as the page's own copy, which the web app hands out too.
+const LOADER_PAGE: &str = include_str!("../../../../web/loader/index.html");
+const LOADER_SCRIPT: &str = include_str!("../../../../web/loader/nuee-loader.js");
+const LOADER_WORKER: &str = include_str!("../../../../web/loader/nuee-sw.js");
 
 /// Arguments of `nuee site`.
 #[derive(Debug, clap::Args)]

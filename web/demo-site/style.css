@@ -1,0 +1,51 @@
+:root {
+  color-scheme: light dark;
+  --ink: #1d1b2f;
+  --paper: #f6f4ee;
+  --accent: #5b3fc4;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #ece9f7;
+    --paper: #15131f;
+    --accent: #b6a6ff;
+  }
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 1.0625rem/1.6 ui-serif, Georgia, serif;
+}
+main {
+  max-width: 38rem;
+  margin: 0 auto;
+  padding: 3rem 1.25rem;
+}
+h1 {
+  font-size: 2.25rem;
+  line-height: 1.15;
+  margin: 0.25rem 0 1rem;
+}
+.kicker {
+  margin: 0;
+  color: var(--accent);
+  font: 600 0.8125rem/1.4 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+a {
+  color: var(--accent);
+}
+button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--accent);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+code {
+  font-size: 0.9em;
+}

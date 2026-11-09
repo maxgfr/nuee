@@ -3,7 +3,7 @@
 // checked for its alphabet here and fully parsed (checksum, version) by the wasm package.
 
 /**
- * @typedef {'home' | 'run' | 'train' | 'share' | 'about' | 'join' | 'file' | 'service' | 'site' | 'group'} ViewName
+ * @typedef {'home' | 'run' | 'train' | 'share' | 'about' | 'join' | 'file' | 'service' | 'site' | 'group' | 'publish'} ViewName
  * @typedef {{ view: ViewName, link?: string, linkError?: 'link_truncated' | 'link_corrupt' }} Route
  */
 
@@ -14,6 +14,7 @@ export const PAGES = new Map([
   ['run', 'run'],
   ['train', 'train'],
   ['share', 'share'],
+  ['publish', 'publish'],
   ['about', 'about'],
 ]);
 

@@ -162,6 +162,14 @@ async function handle(op, args, id) {
       sessions.set(sid, { kind: 'share', s });
       return [{ session: sid, link: s.link }, []];
     }
+    case 'publishSite': {
+      const sid = nextSession;
+      nextSession += 1;
+      const a = /** @type {OpMap['publishSite']['args']} */ (args);
+      const s = await needNode().publishSite(a.files, a.name, eventSink(sid));
+      sessions.set(sid, { kind: 'share', s });
+      return [{ session: sid, link: s.link, site: s.site }, []];
+    }
     case 'approve': {
       const a = /** @type {OpMap['approve']['args']} */ (args);
       const s = session(a.session);

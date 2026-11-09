@@ -56,6 +56,8 @@ export class NueeNode {
   join(link: string, opts: JoinOptions, exec: Executor, onEvent: (e: NueeEvent) => void): Promise<JoinSession>;
   /** Encrypts and serves files; the share gets an endpoint of its own. */
   share(files: NamedBytes[], onEvent: (e: NueeEvent) => void): Promise<ShareSession>;
+  /** Serves a site from this tab under a stable name (`N` link), as a group's keepers do. */
+  publishSite(files: NamedBytes[], name: string, onEvent: (e: NueeEvent) => void): Promise<SiteSession>;
   /** Downloads, verifies (BLAKE3) and decrypts the files of an `F` link. */
   fetchFile(link: string, onProgress?: (got: number, total: number) => void): Promise<FetchedFiles>;
   /** Same for an `S` link (static site preview). */
@@ -362,7 +364,7 @@ export type NueeEvent =
 
 export type Op =
   | 'start' | 'host' | 'join' | 'approve' | 'submit' | 'forget' | 'setSlots' | 'setWebrtc' | 'sendRtc'
-  | 'stop' | 'share' | 'fetchFile' | 'fetchSite' | 'resolveName' | 'http' | 'status' | 'parseLink'
+  | 'stop' | 'share' | 'publishSite' | 'fetchFile' | 'fetchSite' | 'resolveName' | 'http' | 'status' | 'parseLink'
   | 'fingerprint' | 'qrSvg' | 'validateModule' | 'version' | 'laneOpen' | 'laneFrame' | 'laneClosed';
 
 /** Arguments and resolved value of each op. `session` is the id returned by host/join/share. */
@@ -384,6 +386,7 @@ export interface OpMap {
   /** Join session: its data channel closed. */
   laneClosed: { args: { session: number }; value: null };
   share: { args: { files: NamedBytes[] }; value: { session: number; link: string } };
+  publishSite: { args: { files: NamedBytes[]; name: string }; value: { session: number; link: string; site: string } };
   fetchFile: { args: { link: string; progress?: number }; value: FetchedFiles };
   fetchSite: { args: { link: string; progress?: number }; value: FetchedFiles };
   resolveName: { args: { link: string }; value: { link: string } };

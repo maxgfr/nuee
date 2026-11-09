@@ -8,7 +8,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use iroh::endpoint::{Connection, RecvStream, SendStream};
 use iroh::protocol::Router;
+use iroh::protocol::{AcceptError, ProtocolHandler};
 use js_sys::{Array, Function, Object, Promise, Reflect, Uint8Array};
 use n0_future::{FuturesUnordered, StreamExt as _};
 use nuee_core::{
@@ -17,8 +19,9 @@ use nuee_core::{
 };
 use nuee_net::driver::{BoxFut, SubmitError};
 use nuee_net::{
-    CoordinatorDriver, CoordinatorHandle, DriverConfig, HostEvent, JoinError, Net, NetConfig,
-    ONLINE_TIMEOUT, RelayChoice, TaskExec, WorkerHandle, WorkerHostEvent,
+    Admission, AdmitConfig, CoordinatorDriver, CoordinatorHandle, DriverConfig, HostEvent,
+    JoinError, Net, NetConfig, ONLINE_TIMEOUT, RelayChoice, TaskExec, WorkerHandle,
+    WorkerHostEvent, recv_console_body, recv_console_hello, write_frame,
 };
 use nuee_proto::limits::{MAX_INLINE_INPUT, MAX_WASM_MEMORY};
 use nuee_proto::link::DEFAULT_BASE;
@@ -1017,6 +1020,17 @@ impl NueeNode {
         future_to_promise(async move { fetch(node, link, on_progress, true).await.map_err(js_err) })
     }
 
+    /// Serves a site from this tab under a stable name (`N` link) while the session lives.
+    #[wasm_bindgen(js_name = publishSite)]
+    pub fn publish_site(&self, files: JsValue, name: String, on_event: JsValue) -> Promise {
+        let node = self.inner.clone();
+        future_to_promise(async move {
+            publish_site(node, files, name, on_event)
+                .await
+                .map_err(js_err)
+        })
+    }
+
     /// The site link an `N` link points to now, from whichever keeper answers first.
     #[wasm_bindgen(js_name = resolveName)]
     pub fn resolve_name(&self, link: String) -> Promise {
@@ -1415,6 +1429,177 @@ impl JoinSession {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Sites with a stable name, served by this tab.
+
+/// A site this tab serves under a stable name while the session lives: one endpoint serves the
+/// encrypted files, another answers what the name points to.
+#[wasm_bindgen]
+pub struct SiteSession {
+    inner: Rc<(Net, ShareHandle, Net, Router, String, String)>,
+}
+
+/// Answers visitors of the name on `nuee/name/0`, as a group's keepers do.
+#[derive(Clone)]
+struct NameServer {
+    own: EndpointId,
+    secret: [u8; 16],
+    path: String,
+    reply: String,
+    gate: Arc<Admission>,
+}
+
+impl std::fmt::Debug for NameServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NameServer").finish_non_exhaustive()
+    }
+}
+
+impl NameServer {
+    async fn answer(&self, peer: EndpointId, mut send: SendStream, mut recv: RecvStream) {
+        let status = match recv_console_hello(&mut recv, &self.gate, &self.secret, &peer, &self.own)
+            .await
+        {
+            Ok(_) => match recv_console_body(&mut recv).await {
+                Ok(req) if req.method.as_str() == "GET" && req.path.as_str() == self.path => 200,
+                Ok(_) => 404,
+                Err(_) => 400,
+            },
+            Err(_) => 403,
+        };
+        let body = if status == 200 {
+            self.reply.as_bytes().to_vec()
+        } else {
+            br#"{"error":"no site has this name"}"#.to_vec()
+        };
+        let resp = HttpResponse {
+            status,
+            headers: BoundedVec::new(),
+            body: BoundedBytes::try_from(body).unwrap_or_default(),
+        };
+        if let Ok(frame) = nuee_proto::encode_with_limit(&resp, MAX_HTTP_MSG)
+            && write_frame(&mut send, &frame).await.is_ok()
+        {
+            send.finish().ok();
+            send.stopped().await.ok();
+        }
+    }
+}
+
+impl ProtocolHandler for NameServer {
+    async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
+        let peer = conn.remote_id();
+        while let Ok((send, recv)) = conn.accept_bi().await {
+            self.answer(peer, send, recv).await;
+        }
+        Ok(())
+    }
+}
+
+async fn publish_site(
+    node: Rc<Node>,
+    files: JsValue,
+    name: String,
+    on_event: JsValue,
+) -> Result<JsValue, WebError> {
+    let sink = sink_of(on_event, "onEvent")?;
+    if !nuee_proto::valid_site_name(&name) {
+        return Err(WebError::invalid("a site's name uses a-z, 0-9 and -"));
+    }
+    let list = named_files(&files)?;
+    let net = bind(&node.relay).await?;
+    sink.event("online", Obj::new().set("relay", relay_of(&net)));
+    let hub = StoreHub::memory(&net, HubConfig::default());
+    let handle = share_bytes(&net, &hub, &list)
+        .await
+        .map_err(|e| WebError::from(&e))?;
+    let site = Link::Site(handle.link.clone()).to_url(&node.base);
+    // The site link is plain base32 inside a URL: nothing in it needs escaping in JSON.
+    if site.contains(['"', '\\']) {
+        return Err(WebError::internal("unexpected character in the site link"));
+    }
+    let names = bind(&node.relay).await?;
+    let public = nuee_proto::new_secret16().map_err(random_err)?;
+    let relay = relay_of(&names);
+    let keeper = Provider {
+        id: names.id(),
+        relay: (!relay.is_empty())
+            .then(|| bounded(&relay, "the relay URL"))
+            .transpose()?,
+    };
+    let link = Link::Name(NameLink {
+        group: names.id(),
+        public,
+        name: bounded(&name, "the name")?,
+        keepers: BoundedVec::try_from(vec![keeper])
+            .map_err(|_| WebError::internal("one keeper"))?,
+    })
+    .to_url(&node.base);
+    let server = NameServer {
+        own: names.id(),
+        secret: public,
+        path: format!("/names/{name}"),
+        reply: format!(r#"{{"link":"{site}"}}"#),
+        gate: Arc::new(Admission::new(AdmitConfig::default())),
+    };
+    let router = names.router().accept(ALPN_NAME, server).spawn();
+    Ok(SiteSession {
+        inner: Rc::new((net, handle, names, router, link, site)),
+    }
+    .into())
+}
+
+#[wasm_bindgen]
+impl SiteSession {
+    /// The `N` link to hand out: it stays valid while this tab serves the site.
+    #[wasm_bindgen(getter)]
+    pub fn link(&self) -> String {
+        self.inner.4.clone()
+    }
+
+    /// The `S` link the name points to.
+    #[wasm_bindgen(getter)]
+    pub fn site(&self) -> String {
+        self.inner.5.clone()
+    }
+
+    /// Stops serving the name and the files.
+    pub fn stop(&self) -> Promise {
+        let inner = self.inner.clone();
+        future_to_promise(async move {
+            if let Err(e) = inner.3.shutdown().await {
+                web_sys::console::warn_1(&JsValue::from_str(&format!("closing the name: {e}")));
+            }
+            inner
+                .1
+                .shutdown()
+                .await
+                .map_err(|e| js_err(WebError::from(&e)))?;
+            inner.0.close().await;
+            inner.2.close().await;
+            Ok(JsValue::NULL)
+        })
+    }
+}
+
+/// `[{name, bytes}]` from JavaScript.
+fn named_files(files: &JsValue) -> Result<Vec<(String, Vec<u8>)>, WebError> {
+    if !Array::is_array(files) {
+        return Err(WebError::invalid("files must be an array of {name, bytes}"));
+    }
+    let mut list = Vec::new();
+    for f in Array::from(files).iter() {
+        let name = req_str(&f, "name")?;
+        let bytes =
+            opt_bytes(&f, "bytes")?.ok_or_else(|| WebError::invalid("every file needs `bytes`"))?;
+        list.push((name, bytes));
+    }
+    if list.is_empty() {
+        return Err(WebError::invalid("nothing to share"));
+    }
+    Ok(list)
+}
+
+// ---------------------------------------------------------------------------------------------
 // Files.
 
 /// A share served by this browser while the session lives.
@@ -1425,19 +1610,7 @@ pub struct ShareSession {
 
 async fn share(node: Rc<Node>, files: JsValue, on_event: JsValue) -> Result<JsValue, WebError> {
     let sink = sink_of(on_event, "onEvent")?;
-    if !Array::is_array(&files) {
-        return Err(WebError::invalid("files must be an array of {name, bytes}"));
-    }
-    let mut list = Vec::new();
-    for f in Array::from(&files).iter() {
-        let name = req_str(&f, "name")?;
-        let bytes =
-            opt_bytes(&f, "bytes")?.ok_or_else(|| WebError::invalid("every file needs `bytes`"))?;
-        list.push((name, bytes));
-    }
-    if list.is_empty() {
-        return Err(WebError::invalid("nothing to share"));
-    }
+    let list = named_files(&files)?;
     let net = bind(&node.relay).await?;
     sink.event("online", Obj::new().set("relay", relay_of(&net)));
     let hub = StoreHub::memory(&net, HubConfig::default());

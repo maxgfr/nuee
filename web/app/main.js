@@ -31,6 +31,7 @@ export const VIEWS = {
   join: () => import('./views/join.js'),
   file: () => import('./views/file.js'),
   share: () => import('./views/share.js'),
+  publish: () => import('./views/publish.js'),
   about: () => import('./views/about.js'),
   service: () => import('./views/service.js'),
   site: () => import('./views/site.js'),

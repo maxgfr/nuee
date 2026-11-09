@@ -9,6 +9,8 @@ WORKDIR /build/nuee
 COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
 COPY .cargo .cargo
 COPY crates crates
+# The site loader that `nuee site loader` writes.
+COPY web/loader web/loader
 COPY scripts scripts
 COPY tasks/Cargo.toml tasks/Cargo.lock tasks/
 COPY tasks/.cargo tasks/.cargo

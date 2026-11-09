@@ -43,6 +43,7 @@
     <ol>
       <li><a href="#what">What Nuée is</a></li>
       <li><a href="#quick-start">Quick start</a></li>
+      <li><a href="#examples">Real examples</a></li>
       <li><a href="#how">How it works</a></li>
       <li><a href="#modules">What you can run</a></li>
       <li><a href="#security">Security and privacy</a></li>
@@ -116,6 +117,75 @@ task 9 done in 43 ms (1 so far)
 …
 left the swarm after 84 tasks</code></pre>
 <p>Or open the link on a phone: the tab joins the same swarm. Every verb prints human text; add <code>--json</code> to get one JSON event per line on standard output instead (see <a href="#json">NDJSON events</a>).</p>
+</section>
+
+<section aria-labelledby="examples">
+<h2 id="examples"><a href="#examples">Real examples</a></h2>
+<p>Things to do this week, with what you need for each. These recipes were tried over the public relays before they were put on this page, between two identities on one Mac; only the names of your files, repositories and machines change. Passing <code>-</code> reads a link from standard input.</p>
+
+<h3 id="ex-file"><a href="#ex-file">Send someone a file too big for email</a></h3>
+<p><strong>You need:</strong> <code>nuee</code> on your machine. The other person needs only a browser, or <code>nuee</code>.</p>
+<pre class="command"><code>nuee share big.bin</code></pre>
+<p>It prints a link and keeps serving until Ctrl-C, so leave it running. The file is encrypted before it leaves your machine. The other person opens the link in a browser (up to 256 MiB) or runs:</p>
+<pre class="command"><code>nuee get -o downloads/ -</code></pre>
+
+<h3 id="ex-dev"><a href="#ex-dev">Show a colleague what you are building, without deploying</a></h3>
+<p><strong>You need:</strong> a server running on your machine, here on port 3000, and <code>nuee</code> on both sides.</p>
+<pre class="command"><code>nuee expose 3000</code></pre>
+<p>Your colleague pastes the link, then opens <code>http://localhost:3001</code> as if the server were theirs:</p>
+<pre class="command"><code>nuee connect --port 3001 -</code></pre>
+<p>Nothing is opened on your router, and only someone holding the link gets through. Expose a development server, not an admin panel: link holders can do what a local user can.</p>
+
+<h3 id="ex-room"><a href="#ex-room">Make a whole room compute during a talk</a></h3>
+<p><strong>You need:</strong> a projector and an audience with phones. Nothing to install: <a href="../#/run">launch from the page</a>, or from a laptop:</p>
+<pre class="command"><code>nuee run demo:mandelbrot --wait-peers 1</code></pre>
+<p>Show the QR code. Each phone that scans it computes pieces of the fractal, and the image is written to <code>nuee-out/mandelbrot/mandelbrot.ppm</code>.</p>
+
+<h3 id="ex-sweep"><a href="#ex-sweep">Compare training settings on the lab’s machines</a></h3>
+<p><strong>You need:</strong> a pushed repository with a script that takes its settings as arguments and writes its result as JSON to the path it is given, such as <code>{"loss": 0.05}</code>. Write a <code>sweep.toml</code>:</p>
+<pre class="output"><code>name = "lr-sweep"
+kind = "exec"
+verify = "none"
+
+[exec]
+repo = "https://github.com/you/model"
+rev = "the full 40-character commit"
+argv = ["python3", "train.py", "--out", "$NUEE_OUT"]
+timeout = "1h"
+
+[[sweep]]
+name = "lr-0.1"
+args = ["--lr", "0.1"]
+
+[[sweep]]
+name = "lr-0.01"
+args = ["--lr", "0.01"]</code></pre>
+<pre class="command"><code>nuee sweep sweep.toml --allow-exec https://github.com/you/model@COMMIT</code></pre>
+<p>On each other machine, <code>nuee join --allow-exec https://github.com/you/model@COMMIT -</code> shows every command and asks before running it. You get one table, best first:</p>
+<pre class="output"><code>name      status   duration  peer               loss
+lr-0.01   ok           0.4s  local            0.0500
+lr-0.1    ok           0.3s  local            0.1400</code></pre>
+
+<h3 id="ex-tests"><a href="#ex-tests">Run your test suite on the team’s own machines</a></h3>
+<p><strong>You need:</strong> two machines or more, a pushed commit, and a test runner that can split its work, as <code>playwright --shard</code>, <code>jest --shard</code>, <code>node --test-shard</code> and <code>cargo nextest --partition</code> can. It is worth it for a suite that takes minutes, especially on Macs, which cost the most in hosted CI. The group’s creator runs:</p>
+<pre class="command"><code>nuee group create "team"
+nuee group invite - 5b4e4a16f96e1dcf… --name alice --keeper</code></pre>
+<p>Every machine stays in the group and says exactly what it accepts:</p>
+<pre class="command"><code>nuee group up - --allow-repo https://github.com/acme/app.git --allow-command 'node --test --test-shard={i}/{n} test/*.test.mjs'</code></pre>
+<p>Then, from any machine in the group, in a checkout whose commit is pushed:</p>
+<pre class="command"><code>nuee shard 4 --on - -- 'node --test --test-shard={i}/{n} test/*.test.mjs'</code></pre>
+<pre class="output"><code>shard-1-of-4: passed
+shard-2-of-4: FAILED
+shard-3-of-4: passed
+shard-4-of-4: passed
+error: 1 of 4 shards failed; logs in nuee-out/shard-3f2a91c07b1d</code></pre>
+<p>A machine that disappears hands its shard to another. Each shard starts from a clean checkout, so the command must install and build what it needs, with <code>--exec-network</code> on <code>nuee group up</code> if that means downloading. Allowing a repository means trusting every commit that can be pushed to it: read <a href="#groups">Permanent groups</a> first.</p>
+
+<h3 id="ex-site"><a href="#ex-site">Hand over a static site</a></h3>
+<p><strong>You need:</strong> a folder with an <code>index.html</code>.</p>
+<pre class="command"><code>nuee site publish ./public</code></pre>
+<p>Whoever holds the link sees a preview in the page, without its scripts, or downloads the site. It stays available while your command runs; to keep it online for visitors with nothing installed, see <a href="#anchor">The anchor</a>.</p>
+<pre class="command"><code>nuee site get -o site/ -</code></pre>
 </section>
 
 <section aria-labelledby="how">

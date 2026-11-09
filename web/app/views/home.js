@@ -8,6 +8,14 @@ import { errorArea } from '../lib/ui.js';
 
 const BREW = 'brew install maxgfr/tap/nuee';
 
+/** Real uses, each with the command that starts it; the docs give the whole recipe. */
+const USES = [
+  ['home.uses.file', 'nuee share big.bin', 'ex-file'],
+  ['home.uses.dev', 'nuee expose 3000', 'ex-dev'],
+  ['home.uses.sweep', 'nuee sweep sweep.toml', 'ex-sweep'],
+  ['home.uses.tests', 'nuee shard 4 --on - -- \'node --test --test-shard={i}/{n} test/*.test.mjs\'', 'ex-tests'],
+];
+
 /** @param {ViewContext} ctx */
 export function render({ app, root, route }) {
   document.documentElement.dataset.area = 'home';
@@ -75,6 +83,18 @@ export function render({ app, root, route }) {
         ),
         h('li', { class: 'door door-share' }, h('h3', null, h('a', { href: '#/share', i18n: 'door.share.title' })), h('p', { i18n: 'door.share.body' })),
         h('li', { class: 'door door-open' }, h('h3', { class: 'door-label' }, h('label', { for: 'open-link', i18n: 'door.open.title' })), form),
+      ),
+    ),
+    h(
+      'section',
+      { class: 'cli uses', 'aria-labelledby': 'uses-title' },
+      h('h2', { id: 'uses-title', i18n: 'home.uses.title' }),
+      h(
+        'ul',
+        { class: 'use-list' },
+        USES.map(([key, command, anchor]) =>
+          h('li', null, h('a', { href: `docs/#${anchor}`, i18n: key }), h('code', { class: 'mono cmd', text: command })),
+        ),
       ),
     ),
     h(

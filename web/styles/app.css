@@ -767,6 +767,18 @@ pre {
 .cli-docs {
   margin-top: var(--space-3);
 }
+.use-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.use-list li {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+}
 .cmd {
   display: inline-flex;
   align-items: center;

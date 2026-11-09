@@ -27,6 +27,8 @@ nuee shard 8 --on - -- 'npm test -- --shard={i}/{n}'
 Eight pieces of the test suite run on the team's own machines and their logs come back. See
 [docs/GROUPS.md](docs/GROUPS.md), including what allowing a repository means.
 
+More recipes, each run as written: [real examples](https://maxgfr.github.io/nuee/docs/#examples).
+
 ## What works today
 
 - **Verified CPU jobs in WebAssembly.** A coordinator (the CLI or the web page) splits a job into

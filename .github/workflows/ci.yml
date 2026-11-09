@@ -1,7 +1,6 @@
 name: CI
 on:
-  push:
-    branches-ignore: [main]
+  # Not on push as well: every commit of a pull request would run the whole CI twice.
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -16,9 +15,12 @@ env:
   BINARYEN_VERSION: '133'
 jobs:
   check:
+    name: check (${{ matrix.stage }}, ${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
+        # Groups of scripts/check.sh, side by side; together they are every stage of the gate.
+        stage: [static, test, e2e-1, e2e-2, fuzz]
         # Not macos-14: Playwright freezes WebKit there at a build its driver cannot open a
         # page in. The release still builds the arm64 binary on macos-14.
         os: [ubuntu-24.04, macos-15]
@@ -28,7 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Nightly only drives `cargo +nightly fuzz`; rust-toolchain.toml keeps the pinned stable.
+      # Only in the fuzz job: rust-cache hashes every installed toolchain, so a nightly that
+      # changes daily would give the cache a new key, and an empty cache, every day.
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        if: matrix.stage == 'fuzz'
         with:
           toolchain: nightly
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
@@ -36,7 +41,13 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
+      # One cache for the lints and one for the builds, saved from main only: pull requests
+      # read it, and the 10 GB of the repository are not spent on a copy per branch.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: matrix.stage != 'fuzz'
+        with:
+          key: ${{ matrix.stage == 'static' && 'static' || 'build' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && (matrix.stage == 'static' || matrix.stage == 'test') }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -44,11 +55,11 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install the Vulkan software driver (lavapipe) and bubblewrap for the exec sandbox tests
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && (matrix.stage == 'test' || startsWith(matrix.stage, 'e2e'))
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers bubblewrap
       # Ubuntu 24.04 blocks unprivileged user namespaces through AppArmor; bwrap needs them.
       - name: Allow unprivileged user namespaces for bwrap
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && (matrix.stage == 'test' || startsWith(matrix.stage, 'e2e'))
         run: |
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
@@ -56,7 +67,7 @@ jobs:
           bwrap --ro-bind / / --unshare-net --unshare-pid --die-with-parent true
       # ring's build script compiles C for wasm32 and Apple's clang ships no wasm32 backend.
       - name: Use Homebrew LLVM for the wasm32 C toolchain
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && matrix.stage != 'fuzz'
         run: |
           brew install llvm
           llvm_prefix=$(brew --prefix llvm)
@@ -70,10 +81,12 @@ jobs:
           tool: wasm-bindgen@0.2.128,wasm-pack@0.15.0,cargo-deny@0.20.2,cargo-audit@0.22.2,cargo-fuzz@0.13.2,shellcheck@0.11.0
       # install-action has no actionlint manifest at this pin; the Go module proxy checksums it.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.stage == 'static'
         with:
           go-version: stable
           cache: false
       - run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+        if: matrix.stage == 'static'
       - name: Install binaryen (wasm-opt)
         run: |
           case "$RUNNER_OS-$RUNNER_ARCH" in
@@ -92,8 +105,10 @@ jobs:
           echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
       - run: wasm-opt --version
       - run: npm ci --prefix e2e --ignore-scripts --no-audit --no-fund
+        if: startsWith(matrix.stage, 'e2e')
       - run: npx --prefix e2e playwright install --with-deps chromium firefox webkit
-      - run: scripts/check.sh
+        if: startsWith(matrix.stage, 'e2e')
+      - run: scripts/check.sh ${{ matrix.stage }}
   nan-lint:
     strategy:
       fail-fast: false

@@ -118,7 +118,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: maxgfr/nuee@v0.5.0
+      - uses: maxgfr/nuee@v0.6.0
         with:
           group: ${{ secrets.NUEE_GROUP }}
           key: ${{ secrets.NUEE_KEY }}

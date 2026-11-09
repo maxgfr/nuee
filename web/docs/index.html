@@ -207,7 +207,7 @@ error: 1 of 4 shards failed; logs in nuee-out/shard-3f2a91c07b1d</code></pre>
 <p><strong>You need:</strong> the same group, and two repository secrets. On the machine that created the group, make a key that can only submit jobs:</p>
 <pre class="command"><code>nuee group ci-key - --name github</code></pre>
 <p>Store it as <code>NUEE_KEY</code> and the group link as <code>NUEE_GROUP</code>, then add the step to a workflow. The hosted runner only waits, so the cheapest one will do:</p>
-<pre class="output"><code>- uses: maxgfr/nuee@v0.5.0
+<pre class="output"><code>- uses: maxgfr/nuee@v0.6.0
   with:
     group: ${{ secrets.NUEE_GROUP }}
     key: ${{ secrets.NUEE_KEY }}

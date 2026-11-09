@@ -30,7 +30,7 @@ nuee shard 8 --on - -- 'npm test -- --shard={i}/{n}'         # eight pieces, on 
 Or from a workflow, with the Action in this repository:
 
 ```yaml
-- uses: maxgfr/nuee@v0.5.0
+- uses: maxgfr/nuee@v0.6.0
   with:
     group: ${{ secrets.NUEE_GROUP }}
     key: ${{ secrets.NUEE_KEY }}
@@ -38,9 +38,24 @@ Or from a workflow, with the Action in this repository:
     keep: dist
 ```
 
-See [docs/GROUPS.md](docs/GROUPS.md), including what allowing a repository means. The same group
-keeps files (`nuee group put`), serves sites, and works from Python and coding agents
-(`nuee mcp`).
+See [docs/GROUPS.md](docs/GROUPS.md), including what allowing a repository means. To try it alone
+in two minutes on this repository's own tests, follow
+[this recipe](https://maxgfr.github.io/nuee/docs/#ex-try).
+
+## Your group's files and sites, on your own machines
+
+The same group keeps files and sites, and another keeper takes over when the coordinating machine
+dies:
+
+```sh
+nuee group put - ./photos                        # the group keeps a copy; turn this machine off
+nuee site publish ./public --on - --name blog    # a link that stays the same across versions
+nuee site loader - -o deploy/                    # three files for GitHub Pages or any static host
+```
+
+The loader serves the site, scripts and pages included, from the static host's own address: the
+content comes from the group and is checked against its hash, and a returning visitor keeps it
+with every machine off. The group also works from Python and coding agents (`nuee mcp`).
 
 More recipes, each run as written: [real examples](https://maxgfr.github.io/nuee/docs/#examples).
 
@@ -90,8 +105,10 @@ More recipes, each run as written: [real examples](https://maxgfr.github.io/nuee
   presenter's page over a data channel, signalled through iroh, with iroh as the fallback. No TURN server; STUN is
   configurable.
 - **Permanent groups.** `nuee group` keeps a link valid while machines come and go, with a
-  roster signed by the group's own key and a coordinator role that can be handed over.
-  `nuee shard` runs a test suite across them. See [docs/GROUPS.md](docs/GROUPS.md).
+  roster signed by the group's own key. When the coordinating keeper dies, the next one takes
+  over with its copy of the files and sites. `nuee build` and `nuee shard` run builds and test
+  suites across the machines in a sandbox, also from the GitHub Action, and `nuee site publish
+  --name` gives a site a stable link. See [docs/GROUPS.md](docs/GROUPS.md).
 - **Interrupted runs resume.** Outputs already in the output directory are kept; run the same
   command again.
 

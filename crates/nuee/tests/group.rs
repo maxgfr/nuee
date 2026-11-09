@@ -158,6 +158,19 @@ fn start_relay(node: &Node) -> (Guard, String) {
     (guard, url)
 }
 
+fn http_get(addr: &str, path: &str) -> String {
+    use std::io::{Read as _, Write as _};
+    let mut stream = std::net::TcpStream::connect(addr).expect("connect");
+    write!(
+        stream,
+        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n"
+    )
+    .expect("request");
+    let mut answer = String::new();
+    stream.read_to_string(&mut answer).expect("response");
+    answer
+}
+
 fn git(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .current_dir(dir)
@@ -360,12 +373,26 @@ fn the_drive_survives_the_loss_of_its_coordinator() {
     let up = |node: &Node| {
         let mut cmd = node.with_relay(&relay);
         cmd.args(["group", "up", &link, "--slots", "1"]);
+        cmd.args(["--gateway", "127.0.0.1:0"]);
         Guard::spawn(cmd)
     };
     let mut up_a = up(&a);
     up_a.event("anchor");
     let up_b = up(&b);
     up_b.event("welcome");
+
+    let site = c.path().join("site");
+    std::fs::create_dir(&site).expect("site");
+    std::fs::write(site.join("index.html"), "<h1>our site</h1>").expect("page");
+    let mut publish = c.with_relay(&relay);
+    publish.args(["site", "publish"]).arg(&site);
+    publish.args(["--on", &link]);
+    let (status, out) = finish(publish);
+    assert!(status.success(), "publish failed: {out:?}");
+    let path = named(&out, "anchored")["path"]
+        .as_str()
+        .expect("path")
+        .to_owned();
 
     let photos = c.path().join("photos.txt");
     std::fs::write(&photos, "souvenirs").expect("file");
@@ -375,10 +402,18 @@ fn the_drive_survives_the_loss_of_its_coordinator() {
     assert!(status.success(), "put failed: {out:?}");
     assert_eq!(named(&out, "kept")["name"], "photos.txt");
 
-    up_b.event("copied");
+    // The site was copied first; the coordinator may die once the file is copied too.
+    while up_b.event("copied")["files"] != 1 {}
     up_a.child.kill().expect("kill the coordinator");
     up_a.child.wait().expect("reap");
-    up_b.event("anchor");
+    let anchor = up_b.event("anchor");
+    let gateway = anchor["gateway"]
+        .as_str()
+        .expect("gateway")
+        .trim_start_matches("http://")
+        .to_owned();
+    let page = http_get(&gateway, &path);
+    assert!(page.contains("<h1>our site</h1>"), "{page}");
 
     let mut ls = c.with_relay(&relay);
     ls.args(["group", "ls", &link]);

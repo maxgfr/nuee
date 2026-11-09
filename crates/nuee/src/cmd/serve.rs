@@ -953,15 +953,24 @@ impl Anchor {
 
     /// `link` as served by this machine.
     fn own_link(&self, stored: &str) -> Option<String> {
-        let Ok(Link::File(mut link) | Link::Site(mut link)) = Link::parse(stored) else {
+        let parsed = Link::parse(stored).ok()?;
+        let (Link::File(link) | Link::Site(link)) = &parsed else {
             return None;
         };
         let mut providers = BoundedVec::new();
         providers
             .push(nuee_store::self_provider(&self.files_net))
             .ok()?;
-        link.providers = providers;
-        Some(Link::File(link).to_url(&self.web_base))
+        let own = FileLink {
+            providers,
+            ..link.clone()
+        };
+        let own = if matches!(parsed, Link::Site(_)) {
+            Link::Site(own)
+        } else {
+            Link::File(own)
+        };
+        Some(own.to_url(&self.web_base))
     }
 
     /// `POST /drive`: keeps a copy of a file for the group.
@@ -2013,7 +2022,7 @@ async fn copy_once(net: &Net, leader: &ServiceLink, dir: &Path, ctx: &Ctx) -> an
     let copied = async {
         let links = files.iter().map(|f| f.link.as_str());
         for link in links.chain(sites.iter().map(|s| s.link.as_str())) {
-            if let Ok(Link::File(link)) = Link::parse(link) {
+            if let Ok(Link::File(link) | Link::Site(link)) = Link::parse(link) {
                 nuee_store::fetch_kept(net, &hub, &link)
                     .await
                     .map_err(crate::store_failure)?;

@@ -167,8 +167,13 @@ struct UpArgs {
     /// Accept `nuee shard` and `nuee build` work at any commit of this repository, inside the sandbox
     #[arg(long, value_name = "URL", requires = "allow_command")]
     allow_repo: Option<String>,
-    /// The only shard command accepted from --allow-repo; {i} and {n} stand for numbers (repeat)
-    #[arg(long, value_name = "COMMAND", requires = "allow_repo")]
+    #[arg(
+        long,
+        value_name = "COMMAND",
+        requires = "allow_repo",
+        help = "The only shard or build command accepted from --allow-repo; {i} and the letter n in \
+                braces stand for numbers (repeat)"
+    )]
     allow_command: Vec<String>,
     /// Fetch the --allow-repo URL from a local clone instead (air-gapped machines, tests)
     #[arg(long, value_name = "URL=PATH", requires = "allow_repo")]
@@ -611,8 +616,16 @@ async fn one_session(link_text: &str, ctx: &Ctx, jobs: &mut Vec<GroupJob>) -> an
                 format!("{} jobs", ids.len())
             }
         ));
+        let hint = jobs.first().and_then(|j| j.manifest.exec.as_ref()).map(|exec| {
+            format!(
+                "nothing finished after a minute. If no machine is working on it, check that one runs \
+                 `nuee group up` with --allow-repo {} and an --allow-command written exactly as \
+                 this command, with {{i}} and {{n}} for shard numbers",
+                exec.repo.as_str()
+            )
+        });
         for id in ids {
-            serve::follow_job(ctx, &leader, &net, id, &jobs[0].dir).await?;
+            serve::follow_job(ctx, &leader, &net, id, &jobs[0].dir, hint.as_deref()).await?;
             jobs.remove(0);
         }
         Ok(())
@@ -960,6 +973,12 @@ async fn handoff(link_text: &str, id: &str, ctx: &Ctx) -> anyhow::Result<ExitCod
             .iter_mut()
             .find(|m| m.id == id)
             .ok_or_else(|| fail(exit::USAGE, "this machine is not in the group"))?;
+        if !target.worker {
+            return Err(fail(
+                exit::USAGE,
+                "this member only submits jobs (a CI key): it cannot coordinate",
+            ));
+        }
         target.keeper_rank = None;
         let mut others: Vec<u16> = members.iter().filter_map(|m| m.keeper_rank).collect();
         others.sort_unstable();

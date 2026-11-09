@@ -40,8 +40,13 @@ pub struct Args {
     /// Where to write each shard's log (default ./nuee-out/shard-<commit>)
     #[arg(long, value_name = "DIR")]
     pub out: Option<PathBuf>,
-    /// The command, run by `sh`; `{i}` is the shard (from 1) and `{n}` the shard count
-    #[arg(last = true, required = true, value_name = "COMMAND")]
+    #[arg(
+        last = true,
+        required = true,
+        value_name = "COMMAND",
+        help = "The command, run by `sh`; `{i}` is the shard (from 1) and the letter n in braces the \
+                shard count (clap would print that placeholder as a line break)"
+    )]
     pub command: Vec<String>,
 }
 

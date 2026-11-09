@@ -144,9 +144,18 @@ fn command_line(tool: &str, a: &Value) -> Option<Result<Vec<String>, String>> {
 /// Runs one tool as a `nuee` process and returns its events as the tool's result.
 async fn call(tool: &str, argv: &[String], link: &str, ctx: &Ctx) -> anyhow::Result<Value> {
     let mut cmd = tokio::process::Command::new(std::env::current_exe()?);
-    cmd.arg("--json");
+    cmd.arg("--json")
+        .arg("--web-base")
+        .arg(&ctx.global.web_base);
     if let Some(relay) = &ctx.global.relay {
         cmd.arg("--relay").arg(relay);
+    }
+    // The same identity and store as this server, whether they came from flags or the environment.
+    if let Some(dir) = &ctx.global.config_dir {
+        cmd.arg("--config-dir").arg(dir);
+    }
+    if let Some(dir) = &ctx.global.data_dir {
+        cmd.arg("--data-dir").arg(dir);
     }
     let mut child = cmd
         .args(argv)

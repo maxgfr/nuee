@@ -968,7 +968,7 @@ impl Anchor {
                 if req.name.is_some() {
                     s.name == req.name
                 } else {
-                    s.id == id
+                    s.name.is_none() && s.id == id
                 }
             };
             let replaced: Vec<String> = book
@@ -993,6 +993,32 @@ impl Anchor {
             }
         }
         (201, json!({ "id": id, "path": path }))
+    }
+
+    /// `DELETE /sites/<id or name>` on a group: the record goes, and the copy once nothing else
+    /// points to it.
+    async fn remove_group_site(&self, key: &str) -> Reply {
+        let mut book = self.book.lock().await;
+        let gone: Vec<String> = book
+            .sites
+            .iter()
+            .filter(|s| s.id == key || s.name.as_deref() == Some(key))
+            .map(|s| s.id.clone())
+            .collect();
+        if gone.is_empty() {
+            return err(404, "no such site");
+        }
+        book.sites
+            .retain(|s| !(s.id == key || s.name.as_deref() == Some(key)));
+        if let Err(e) = self.save_list("sites.json", &book.sites) {
+            return err(500, format!("{e:#}"));
+        }
+        for id in gone {
+            if !book.sites.iter().any(|s| s.id == id) {
+                self.forget_site(&id).await;
+            }
+        }
+        (200, json!({ "removed": key }))
     }
 
     /// Stops serving and keeping a site nothing points to any more.
@@ -1185,6 +1211,9 @@ impl Anchor {
     }
 
     async fn remove(&self, what: &str, id: &str) -> Reply {
+        if what == "sites" && self.group.is_some() {
+            return self.remove_group_site(id).await;
+        }
         let Some(gateway) = &self.gateway else {
             return err(404, "not found");
         };
@@ -1998,6 +2027,10 @@ pub(crate) async fn run_anchor(
     let stop = stop_signal();
     tokio::pin!(stop);
     let mut end = AnchorEnd::Stopped;
+    // Its own clock: a timer made inside the loop would start over with every event.
+    let mut give_way = tokio::time::interval(super::group::group_time(GIVE_WAY_POLL));
+    give_way.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    give_way.tick().await;
     loop {
         let handoff = async {
             match &anchor.group {
@@ -2011,12 +2044,6 @@ pub(crate) async fn run_anchor(
                 None => std::future::pending().await,
             }
         };
-        let give_way = async {
-            if before.is_empty() {
-                std::future::pending::<()>().await;
-            }
-            tokio::time::sleep(super::group::group_time(GIVE_WAY_POLL)).await;
-        };
         tokio::select! {
             () = &mut stop => break,
             () = handoff => {
@@ -2025,7 +2052,7 @@ pub(crate) async fn run_anchor(
                 end = AnchorEnd::HandedOff;
                 break;
             }
-            () = give_way => {
+            _ = give_way.tick(), if !before.is_empty() => {
                 if anchor.book.lock().await.core.is_empty()
                     && another_coordinates(&anchor.net, &before).await
                 {
@@ -2529,22 +2556,28 @@ async fn after_submit(
         link.host
     ));
     match follow {
-        Some(out) => follow_job(ctx, link, net, id, &out).await,
+        Some(out) => follow_job(ctx, link, net, id, &out, None).await,
         None => Ok(ExitCode::SUCCESS),
     }
 }
 
 /// Polls a job on the anchor until it is done, then downloads its results bundle.
+/// When a submitter hears why nothing may be happening.
+const SLOW_JOB: Duration = Duration::from_secs(60);
+
 pub(crate) async fn follow_job(
     ctx: &Ctx,
     link: &ServiceLink,
     net: &Net,
     id: u64,
     out: &Path,
+    slow_hint: Option<&str>,
 ) -> anyhow::Result<ExitCode> {
     let bar = ctx.ui.bar(0, "tasks");
     let stop = crate::ctrl_c();
     tokio::pin!(stop);
+    let started = std::time::Instant::now();
+    let mut hinted = false;
     let summary = loop {
         let (status, v) = admin(net, link, "GET", &format!("/jobs/{id}"), None).await?;
         if status != 200 {
@@ -2562,6 +2595,14 @@ pub(crate) async fn follow_job(
         );
         if v["state"] == "done" {
             break v;
+        }
+        if let Some(hint) = slow_hint
+            && !hinted
+            && done == 0
+            && started.elapsed() > SLOW_JOB
+        {
+            hinted = true;
+            ctx.ui.note(hint);
         }
         tokio::select! {
             () = &mut stop => {

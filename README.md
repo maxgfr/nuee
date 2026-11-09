@@ -12,7 +12,22 @@ nuee run demo:mandelbrot
 The web page is https://maxgfr.github.io/nuee/. It can join a swarm, run one, share a file or
 open any Nuée link, with nothing to install.
 
-## What works in v0.1
+## Keep a group, run your tests on it
+
+Machines that stay together can form a permanent group, then split work between them:
+
+```sh
+nuee group create "team"                       # prints a link that stays valid
+nuee group invite - <machine id> --name alice --keeper
+nuee group up - --allow-repo https://github.com/acme/app.git \
+  --allow-command 'npm test -- --shard={i}/{n}'
+nuee shard 8 --on - -- 'npm test -- --shard={i}/{n}'
+```
+
+Eight pieces of the test suite run on the team's own machines and their logs come back. See
+[docs/GROUPS.md](docs/GROUPS.md), including what allowing a repository means.
+
+## What works today
 
 - **Verified CPU jobs in WebAssembly.** A coordinator (the CLI or the web page) splits a job into
   tasks; CLI workers (`nuee join`) and browser tabs run them. The same module gives the same
@@ -57,6 +72,9 @@ open any Nuée link, with nothing to install.
   direct connections (WebRTC), browser workers that accept send their results straight to the
   presenter's page over a data channel, signalled through iroh, with iroh as the fallback. No TURN server; STUN is
   configurable.
+- **Permanent groups.** `nuee group` keeps a link valid while machines come and go, with a
+  roster signed by the group's own key and a coordinator role that can be handed over.
+  `nuee shard` runs a test suite across them. See [docs/GROUPS.md](docs/GROUPS.md).
 - **Interrupted runs resume.** Outputs already in the output directory are kept; run the same
   command again.
 
@@ -166,6 +184,7 @@ Global options: `--relay URL`, `--relay-only` (no direct connections), `--web-ba
 | [docs/STORAGE.md](docs/STORAGE.md) | share, get, pin, replicas, repair, challenges, Reed-Solomon |
 | [docs/HOSTING.md](docs/HOSTING.md) | expose, connect, the console, sites, the gateway |
 | [docs/ANCHOR.md](docs/ANCHOR.md) | running an always-on anchor |
+| [docs/GROUPS.md](docs/GROUPS.md) | permanent groups, `nuee shard`, what `--allow-repo` trusts |
 
 `--exec-mirror URL=PATH` (on `run`, `join` and `sweep`, next to `--allow-exec`) fetches the
 allowlisted repository from a local clone instead of the network. It is meant for operators of
@@ -208,6 +227,9 @@ air-gapped machines and for tests; the commit is checked the same way.
   approved exactly (repository, commit, argv and environment), in a throwaway checkout, with a
   cleaned environment, time limits and `sandbox-exec` or `bwrap` when present. Approving a
   command means trusting the commit's code.
+- **`--allow-repo` trusts a whole repository.** On `nuee group up`, off by default and refused
+  without a sandbox, it runs one shard command at any commit submitted by a machine on the
+  roster. Anyone who can push to that repository can run code in the sandbox of those machines.
 - **Hosted content never runs in the app's origin.** The console shows JSON, the site preview
   is an inert sandboxed frame, the gateway sends `Content-Security-Policy: sandbox`.
 

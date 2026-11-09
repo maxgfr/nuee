@@ -298,6 +298,7 @@ refuse anything above them whatever the manifest says (`nuee-core::worker`).
 | `S` | `FileLink` | same as `F`, served as a static site |
 | `X` | `ServiceLink` | `host: EndpointId`, `relay: BoundedString<256>`, `secret: [u8;16]` |
 | `P` | `PinLink` | `FileLink` without `key` |
+| `G` | `GroupLink` | `group: EndpointId`, `secret: [u8;16]`, `bootstrap: BoundedVec<Provider,4>` (at least one) |
 
 `key` is an age X25519 identity: whoever has an `F`/`S` link can decrypt; a `P` link only allows
 fetching ciphertext.
@@ -317,6 +318,29 @@ letters. Errors are distinct so the UI can say something useful:
 - `UnsupportedVersion(v)`: first byte is not 1;
 - `Corrupt`: checksum fine but the body does not decode, or an unknown kind letter;
 - `WrongKind`: a valid link of another kind (`P` given to `Link::parse`, or the reverse).
+
+### 7.1 Groups
+
+A `G` link names a group by its key. `blake3::derive_key` of `secret` under the contexts
+`nuee group swarm secret 0` and `nuee group admin secret 0` gives, truncated to 16 bytes, the
+secrets of the group's `nuee/job/0` swarm and `nuee/http/0` API.
+
+`SignedRoster { bytes: postcard(Roster), sig }` (at most 64 KiB) is signed by the group key over
+`nuee/roster/0 || bytes`. `Roster { version, group, name, revision, members }`, each
+`Member { id, name, worker, store, keeper_rank: Option<u16> }`. Member ids and keeper ranks are
+unique and at least one member is a keeper. The keeper of lowest rank coordinates. A roster
+replaces another only with the same group and a higher revision.
+
+The coordinating keeper serves its anchor API (5.3) with three more routes. `GET /roster` returns
+`{roster: hex(postcard(SignedRoster))}` and `POST /roster` takes the same body; both are open to
+any holder of the link, the second because the signature decides. `POST /delegate`
+`{member, sig: hex(postcard(Signature))}` lets the calling key act for `member`, a machine on the
+roster, which signed `nuee/delegate/0 || caller`. Delegations end when the roster changes. Every
+other route needs a caller on the roster or delegated by one.
+
+A worker may advertise `repo@*` in `Caps::exec_allow`: it runs some commands at any commit of
+`repo` and checks each one itself. Such a command is the shard wrapper
+`["sh", "-c", SCRIPT, "nuee", "$NUEE_OUT", command]` with no environment and no GPU.
 
 ## 8. Coordinator fingerprint
 

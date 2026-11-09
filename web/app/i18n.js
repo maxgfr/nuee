@@ -56,7 +56,7 @@ const en = {
   'open.notNuee': 'This is not a Nuée link.',
   'open.pinLink': 'This is a pin link: use it with “nuee pin” on the command line.',
   'home.cli.title': 'On a computer, use the command line',
-  'home.cli.body': 'The nuee command runs the same swarms, natively, and can host larger jobs.',
+  'home.cli.body': 'The nuee command runs the same swarms, natively, hosts larger jobs, and keeps a permanent group of machines that can run your test suite between them.',
   'home.cli.docs': 'Read the documentation: every command, how results are checked, and the limits',
 
   'link.label': 'Link to share',
@@ -67,6 +67,9 @@ const en = {
   'link.host': 'Host’s fingerprint',
   'link.service.title': 'A shared service',
   'link.service.body': 'This link opens a service shared with Nuée. Connect to it with the command line:',
+  'link.group.title': 'A permanent group',
+  'link.group.body': 'This link names a group of machines that outlives any one of them. A machine takes part from the command line, once the group’s creator has added it:',
+  'link.group.fingerprint': 'Group’s fingerprint',
   'link.site.title': 'A shared site',
   'link.site.body': 'This link holds a site shared with Nuée. Its preview is not available in this version of the page yet.',
   'site.title': 'A shared site',

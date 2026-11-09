@@ -1,6 +1,6 @@
 // @ts-check
-// Service (#/X/…) and site (#/S/…) links: what they point to and how to open them today.
-// The service console and the site preview replace this view in their own steps.
+// Group links (#/G/…): what they point to and how to take part, since a group needs the command
+// line for now.
 /** @typedef {import('../main').ViewContext} ViewContext */
 import { h } from '../lib/dom.js';
 import { errorArea, fingerprintBlock } from '../lib/ui.js';
@@ -8,7 +8,7 @@ import { errorArea, fingerprintBlock } from '../lib/ui.js';
 /** @param {ViewContext} ctx */
 export function render({ app, root, route }) {
   const errors = errorArea();
-  const kind = route.view === 'site' ? 'site' : 'service';
+  const kind = 'group';
   document.documentElement.dataset.area = kind;
   const page = h('section', { class: 'page narrow', 'aria-labelledby': 'link-title' }, h('h1', { id: 'link-title', i18n: `link.${kind}.title` }), errors.el);
   root.append(page);
@@ -22,9 +22,9 @@ export function render({ app, root, route }) {
         h(
           'div',
           { class: 'card' },
-          fingerprintBlock(info.fingerprint, 'link.host'),
+          fingerprintBlock(info.fingerprint, 'link.group.fingerprint'),
           h('p', { i18n: `link.${kind}.body` }),
-          kind === 'service' ? h('code', { class: 'mono cmd', text: 'nuee connect <link>' }) : null,
+          h('code', { class: 'mono cmd', text: 'nuee group up <link>' }),
         ),
       );
     },

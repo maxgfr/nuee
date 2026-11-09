@@ -65,6 +65,9 @@ shard-2-of-8: FAILED
 error: 1 of 8 shards failed; logs in nuee-out/shard-3f2a91c07b1d
 ```
 
+Each shard starts from a clean checkout of the commit, so the command must install and build what
+the tests need, and needs `--exec-network` to download anything.
+
 `{i}` counts from 1 and `{n}` is the number of shards, as `playwright --shard`, `jest --shard` and
 `cargo nextest --partition hash:{i}/{n}` expect. A failing test is a result: its log comes back
 and nothing is run again. A machine that disappears is another matter: its shard goes to another

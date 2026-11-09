@@ -12,10 +12,9 @@ use nuee_proto::{
     BoundedString, BoundedVec, Comparator, ExecSpec, Manifest, PROTO_VERSION, TaskKind, VerifyMode,
     VerifyPolicy,
 };
-use nuee_store::{HubConfig, StoreHub};
 use serde_json::json;
 
-use super::serve::{self, AnchorJob};
+use super::group::GroupJob;
 use crate::{Ctx, exit, fail};
 
 /// Arguments of `nuee shard`.
@@ -200,17 +199,19 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         Path::new("nuee-out").join(format!("shard-{}", rev.get(..12).unwrap_or(&rev)))
     });
 
-    let (net, leader) = super::group::member_session(&args.on, ctx).await?;
-    let hub = StoreHub::memory(&net, HubConfig::default());
-    let router = net
-        .router()
-        .accept(iroh_blobs::ALPN, hub.protocol())
-        .spawn();
-    let result = shards(ctx, &net, &hub, &leader, manifests, &out).await;
-    if let Err(e) = router.shutdown().await {
-        tracing::debug!("closing the endpoint: {e}");
-    }
-    let failed = result?;
+    let jobs = manifests
+        .into_iter()
+        .map(|manifest| GroupJob {
+            dir: out.join(manifest.name.as_str()),
+            manifest,
+        })
+        .collect::<Vec<_>>();
+    let names: Vec<String> = jobs
+        .iter()
+        .map(|j| j.manifest.name.as_str().to_owned())
+        .collect();
+    super::group::run_jobs(&args.on, ctx, jobs).await?;
+    let failed = report(ctx, &names, &out)?;
     ctx.ui.emit(
         "done",
         json!({ "shards": args.shards, "failed": failed, "out": out.display().to_string() }),
@@ -233,34 +234,11 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Submits every shard, waits for each, and returns how many failed.
-async fn shards(
-    ctx: &Ctx,
-    net: &nuee_net::Net,
-    hub: &StoreHub,
-    leader: &nuee_proto::ServiceLink,
-    manifests: Vec<Manifest>,
-    out: &Path,
-) -> anyhow::Result<usize> {
-    let mut jobs = Vec::with_capacity(manifests.len());
-    for manifest in manifests {
-        let name = manifest.name.as_str().to_owned();
-        let job = AnchorJob {
-            manifest,
-            module: Vec::new(),
-            assets: Vec::new(),
-            inputs: vec![Vec::new()],
-        };
-        jobs.push((name, serve::post_job(net, hub, leader, job).await?));
-    }
-    ctx.ui.note(&format!(
-        "{} shards submitted; they run on the machines that allow this repository and command",
-        jobs.len()
-    ));
+/// Reports every shard and returns how many failed.
+fn report(ctx: &Ctx, names: &[String], out: &Path) -> anyhow::Result<usize> {
     let mut failed = 0;
-    for (name, id) in jobs {
-        let dir = out.join(&name);
-        serve::follow_job(ctx, leader, net, id, &dir).await?;
+    for name in names {
+        let dir = out.join(name);
         let log = read_log(&dir)?;
         let code = shard_exit_code(&log);
         let passed = code == Some(0);

@@ -13,9 +13,10 @@ use nuee_exec::RepoRule;
 use nuee_net::{Net, RelayChoice};
 use nuee_proto::limits::MAX_ROSTER;
 use nuee_proto::{
-    BoundedString, BoundedVec, DOMAIN_DELEGATE, EndpointId, GroupLink, JobLink, Link, Member,
-    PROTO_VERSION, Provider, Roster, SecretKey, ServiceLink, SignedRoster,
+    BoundedString, BoundedVec, DOMAIN_DELEGATE, EndpointId, GroupLink, JobLink, Link, Manifest,
+    Member, PROTO_VERSION, Provider, Roster, SecretKey, ServiceLink, SignedRoster,
 };
+use nuee_store::{HubConfig, StoreHub};
 use serde_json::{Value, json};
 
 use super::serve::{self, AnchorEnd, GroupContext};
@@ -27,6 +28,13 @@ const ASK_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_secs(5);
 /// Pause before trying again when no keeper answers.
 const RETRY: Duration = Duration::from_secs(5);
+/// How long each place in the keeper order waits before taking over, so that the first keeper
+/// still there takes over and the others see it.
+const STAGGER: Duration = Duration::from_secs(10);
+/// Silent polls in a row after which a member stops believing in its coordinator.
+const SILENT_POLLS: u32 = 3;
+/// Times one run of jobs starts over after losing its coordinator.
+const MAX_TAKEOVERS: u32 = 5;
 
 /// Arguments of `nuee group`.
 #[derive(Debug, clap::Args)]
@@ -296,7 +304,9 @@ pub(crate) async fn member_session(
     let (_, roster) = newest_roster(&net, &link, ctx)
         .await?
         .ok_or_else(|| fail(exit::NETWORK, "no machine of the group answered"))?;
-    let leader = roster.keepers()[0].id;
+    let leader = coordinator(&net, &link, &roster, None)
+        .await?
+        .ok_or_else(|| fail(exit::NETWORK, "no machine of the group is coordinating"))?;
     let target = service_link(&link, leader, &group_relay(&link).unwrap_or_default())?;
     let key = ctx.secret()?;
     let sig = nuee_proto::sign_domain(&key, DOMAIN_DELEGATE, net.id().as_bytes());
@@ -309,6 +319,79 @@ pub(crate) async fn member_session(
         return Err(serve::admin_error(status, &value));
     }
     Ok((net, target))
+}
+
+/// One job of a run on the group, and the directory its results go to.
+pub(crate) struct GroupJob {
+    pub manifest: Manifest,
+    pub dir: PathBuf,
+}
+
+/// Runs `jobs` on the group until each one has brought its results back. When the coordinator
+/// disappears, whatever is left is submitted again to the keeper that takes over: tasks are named
+/// by their content, so running one twice costs time and nothing else.
+pub(crate) async fn run_jobs(
+    link_text: &str,
+    ctx: &Ctx,
+    mut jobs: Vec<GroupJob>,
+) -> anyhow::Result<()> {
+    let mut lost = 0;
+    loop {
+        let Err(e) = one_session(link_text, ctx, &mut jobs).await else {
+            return Ok(());
+        };
+        if crate::code_of(&e) != exit::NETWORK || lost == MAX_TAKEOVERS {
+            return Err(e);
+        }
+        lost += 1;
+        ctx.ui.note(&format!(
+            "{e:#}; waiting for another machine to coordinate, then submitting what is left"
+        ));
+        ctx.close_nets().await;
+        tokio::select! {
+            () = tokio::time::sleep(STAGGER) => {}
+            () = crate::ctrl_c() => return Err(fail(exit::CANCELLED, "stopped")),
+        }
+    }
+}
+
+async fn one_session(link_text: &str, ctx: &Ctx, jobs: &mut Vec<GroupJob>) -> anyhow::Result<()> {
+    let (net, leader) = member_session(link_text, ctx).await?;
+    let hub = StoreHub::memory(&net, HubConfig::default());
+    let router = net
+        .router()
+        .accept(iroh_blobs::ALPN, hub.protocol())
+        .spawn();
+    let result = async {
+        let mut ids = Vec::with_capacity(jobs.len());
+        for job in jobs.iter() {
+            let submitted = serve::AnchorJob {
+                manifest: job.manifest.clone(),
+                module: Vec::new(),
+                assets: Vec::new(),
+                inputs: vec![Vec::new()],
+            };
+            ids.push(serve::post_job(&net, &hub, &leader, submitted).await?);
+        }
+        ctx.ui.note(&format!(
+            "{} submitted; waiting for the machines that allow this repository and command",
+            if ids.len() == 1 {
+                "job".to_owned()
+            } else {
+                format!("{} jobs", ids.len())
+            }
+        ));
+        for id in ids {
+            serve::follow_job(ctx, &leader, &net, id, &jobs[0].dir).await?;
+            jobs.remove(0);
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(e) = router.shutdown().await {
+        tracing::debug!("closing the endpoint: {e}");
+    }
+    result
 }
 
 fn group_relay(link: &GroupLink) -> Option<String> {
@@ -357,6 +440,24 @@ async fn ask(net: &Net, link: &GroupLink, target: &ServiceLink) -> Option<Signed
     let signed: SignedRoster = nuee_proto::decode_with_limit(&bytes, MAX_ROSTER + 128).ok()?;
     signed.open(&link.group).ok()?;
     Some(signed)
+}
+
+/// The keeper that is coordinating now: only a coordinating keeper answers, and if a brief overlap
+/// has two of them the first in the roster's order is the one to use. `skip` is this machine.
+async fn coordinator(
+    net: &Net,
+    link: &GroupLink,
+    roster: &Roster,
+    skip: Option<EndpointId>,
+) -> anyhow::Result<Option<EndpointId>> {
+    let relay = group_relay(link).unwrap_or_default();
+    let mut asks = Vec::new();
+    for keeper in roster.keepers().into_iter().filter(|k| Some(k.id) != skip) {
+        let target = service_link(link, keeper.id, &relay)?;
+        asks.push(async move { ask(net, link, &target).await.map(|_| keeper.id) });
+    }
+    let answers = futures_util::future::join_all(asks).await;
+    Ok(answers.into_iter().flatten().next())
 }
 
 /// The newest roster among this machine's copy and the machines that answer. Keeps it on disk.
@@ -472,7 +573,9 @@ async fn change_roster(
         .map_err(|e| fail(exit::USAGE, e.to_string()))?;
 
     let net = control_net(ctx, link).await?;
-    let leader = current.keepers()[0].id;
+    let leader = coordinator(&net, link, &current, None)
+        .await?
+        .unwrap_or_else(|| current.keepers()[0].id);
     let target = service_link(link, leader, &group_relay(link).unwrap_or_default())?;
     let body = json!({ "roster": serve::hex(&nuee_proto::encode(&signed)?) });
     let reply = tokio::time::timeout(
@@ -653,6 +756,7 @@ async fn status(link_text: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         .await?
         .ok_or_else(|| fail(exit::NETWORK, "no machine of the group answered"))?;
     let members: Vec<Value> = roster.members.iter().map(describe).collect();
+    let leader = coordinator(&net, &link, &roster, None).await?;
     ctx.ui.emit(
         "group",
         json!({
@@ -660,6 +764,7 @@ async fn status(link_text: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             "name": roster.name.as_str(),
             "revision": roster.revision,
             "members": members,
+            "coordinator": leader.map(|id| id.to_string()),
         }),
     );
     if !ctx.ui.is_json() {
@@ -671,7 +776,7 @@ async fn status(link_text: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         ));
         for m in roster.members.iter() {
             let role = match m.keeper_rank {
-                Some(0) => "coordinates",
+                Some(_) if Some(m.id) == leader => "coordinates",
                 Some(_) => "keeper",
                 None if m.worker => "member",
                 None => "submits",
@@ -682,7 +787,7 @@ async fn status(link_text: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Returns once a roster newer than `revision` has been kept.
+/// Returns once a roster newer than `revision` has been kept, or the coordinator stays silent.
 async fn roster_changed(
     net: &Net,
     link: &GroupLink,
@@ -690,11 +795,17 @@ async fn roster_changed(
     revision: u64,
     ctx: &Ctx,
 ) {
+    let mut silent = 0;
     loop {
         tokio::time::sleep(POLL).await;
         let Some(signed) = ask(net, link, leader).await else {
+            silent += 1;
+            if silent == SILENT_POLLS {
+                return;
+            }
             continue;
         };
+        silent = 0;
         let Ok(roster) = signed.open(&link.group) else {
             continue;
         };
@@ -820,7 +931,30 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             }
             Some(_) => {}
         }
-        let leader = roster.keepers()[0].id;
+        let keepers = roster.keepers();
+        let place = keepers.iter().position(|k| k.id == me);
+        let mut leader = coordinator(&net, &link, &roster, Some(me)).await?;
+        if let (None, Some(place)) = (leader, place.filter(|p| *p > 0)) {
+            ctx.ui
+                .note("no keeper is coordinating; taking over unless one before this one does");
+            let wait = STAGGER.saturating_mul(u32::try_from(place).unwrap_or(u32::MAX));
+            tokio::select! {
+                () = tokio::time::sleep(wait) => {}
+                () = crate::ctrl_c() => return Ok(ExitCode::SUCCESS),
+            }
+            leader = coordinator(&net, &link, &roster, Some(me)).await?;
+        }
+        let leader = match (leader, place) {
+            (Some(id), _) => id,
+            (None, Some(_)) => me,
+            (None, None) => {
+                ctx.ui.note("no keeper is coordinating yet; waiting");
+                if pause(ctx).await {
+                    return Ok(ExitCode::SUCCESS);
+                }
+                continue;
+            }
+        };
         if leader == me {
             net.close().await;
             ctx.close_nets().await;
@@ -839,6 +973,11 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 dir: group_dir.join("anchor"),
                 relay: relay.parse().ok(),
                 native: native.clone(),
+                before: keepers
+                    .iter()
+                    .take_while(|k| k.id != me)
+                    .map(|k| service_link(&link, k.id, &relay))
+                    .collect::<anyhow::Result<_>>()?,
             };
             match serve::run_anchor(anchor_args(&args), ctx, Some(context)).await? {
                 AnchorEnd::Stopped => return Ok(ExitCode::SUCCESS),
@@ -881,7 +1020,7 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 }
                 Err(e) => return Err(e),
             },
-            () = &mut changed => ctx.ui.note("the group's roster changed"),
+            () = &mut changed => ctx.ui.note("the group's coordinator or roster changed"),
             () = mains_lost(&args.only_when) => ctx.ui.note("unplugged: leaving until --only-when holds"),
             () = crate::ctrl_c() => return Ok(ExitCode::SUCCESS),
         }

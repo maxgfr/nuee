@@ -7,10 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use nuee_exec::{BUILD_LOG, MAX_KEPT, build_argv, kept_path_ok, shard_exit_code};
-use nuee_store::{HubConfig, StoreHub};
 use serde_json::json;
 
-use super::serve::{self, AnchorJob};
+use super::group::GroupJob;
 use super::shard::{exec_manifest, fresh_suffix, target};
 use crate::{Ctx, exit, fail};
 
@@ -108,30 +107,12 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         args.timeout,
     )?;
 
-    let (net, leader) = super::group::member_session(&args.on, ctx).await?;
-    let hub = StoreHub::memory(&net, HubConfig::default());
-    let router = net
-        .router()
-        .accept(iroh_blobs::ALPN, hub.protocol())
-        .spawn();
     let work = tempfile::tempdir().map_err(|e| fail(exit::ERROR, format!("temp dir: {e}")))?;
-    let result = async {
-        let job = AnchorJob {
-            manifest,
-            module: Vec::new(),
-            assets: Vec::new(),
-            inputs: vec![Vec::new()],
-        };
-        let id = serve::post_job(&net, &hub, &leader, job).await?;
-        ctx.ui
-            .note("build submitted; it runs on a machine that allows this repository and command");
-        serve::follow_job(ctx, &leader, &net, id, work.path()).await
-    }
-    .await;
-    if let Err(e) = router.shutdown().await {
-        tracing::debug!("closing the endpoint: {e}");
-    }
-    result?;
+    let job = GroupJob {
+        manifest,
+        dir: work.path().to_path_buf(),
+    };
+    super::group::run_jobs(&args.on, ctx, vec![job]).await?;
 
     let path = work.path().join("task-0.bin");
     let archive = std::fs::read(&path)

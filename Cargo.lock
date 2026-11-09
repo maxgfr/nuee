@@ -3956,6 +3956,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "data-encoding",
+ "futures-util",
  "indicatif",
  "iroh",
  "iroh-blobs",

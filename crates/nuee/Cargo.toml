@@ -21,6 +21,7 @@ embed-tasks = []
 
 [dependencies]
 data-encoding = { workspace = true }
+futures-util = { workspace = true }
 tar = { workspace = true }
 nuee-proto = { workspace = true }
 nuee-core = { workspace = true }

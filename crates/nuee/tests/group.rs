@@ -11,7 +11,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 const BIN: &str = env!("CARGO_BIN_EXE_nuee");
-const LIMIT: Duration = Duration::from_secs(120);
+const LIMIT: Duration = Duration::from_secs(180);
 
 struct Node {
     root: TempDir,
@@ -251,6 +251,81 @@ fn shards_run_on_the_group_and_failures_are_results() {
     );
     let log = std::fs::read_to_string(logs.join("shard-3-of-4/task-0.bin")).expect("log");
     assert!(log.contains("shard 3 of 4"), "{log}");
+}
+
+/// The coordinator dies in the middle of a job: another keeper takes over, the worker follows and
+/// the job, submitted again by its client, ends.
+#[test]
+fn a_keeper_takes_over_when_the_coordinator_dies() {
+    const REPO: &str = "https://example.invalid/team/slow.git";
+    const COMMAND: &str = "sleep 8; echo done";
+
+    let relay_node = Node::new();
+    let (_relay, relay) = start_relay(&relay_node);
+    let (a, b, c) = (Node::new(), Node::new(), Node::new());
+
+    let source = tempfile::tempdir().expect("tempdir");
+    let dir = source.path();
+    git(dir, &["init", "-q", "-b", "main"]);
+    std::fs::write(dir.join("README"), "x").expect("file");
+    git(dir, &["add", "README"]);
+    git(dir, &["commit", "-q", "-m", "x"]);
+    let rev = git(dir, &["rev-parse", "HEAD"]);
+    let mirror = format!("{REPO}={}", dir.display());
+
+    let mut create = a.with_relay(&relay);
+    create.args(["group", "create", "lab"]);
+    let (status, out) = finish(create);
+    assert!(status.success(), "group create failed: {out:?}");
+    let mut link = named(&out, "link")["link"]
+        .as_str()
+        .expect("link")
+        .to_owned();
+    let mut invite = a.with_relay(&relay);
+    invite.args(["group", "invite", &link, &b.id(), "--name", "b", "--keeper"]);
+    let (status, out) = finish(invite);
+    assert!(status.success(), "invite failed: {out:?}");
+    link = named(&out, "link")["link"]
+        .as_str()
+        .expect("link")
+        .to_owned();
+    let mut invite = a.with_relay(&relay);
+    invite.args(["group", "invite", &link, &c.id(), "--name", "c"]);
+    assert!(finish(invite).0.success(), "invite failed");
+
+    let up = |node: &Node| {
+        let mut cmd = node.with_relay(&relay);
+        cmd.args(["group", "up", &link, "--slots", "1"]);
+        cmd.args(["--allow-repo", REPO, "--allow-command", COMMAND]);
+        cmd.args(["--exec-mirror", &mirror]);
+        Guard::spawn(cmd)
+    };
+    let mut up_a = up(&a);
+    up_a.event("anchor");
+    let up_b = up(&b);
+    up_b.event("welcome");
+    let up_c = up(&c);
+    up_c.event("welcome");
+
+    let mut shard = b.with_relay(&relay);
+    shard.args(["shard", "1", "--on", &link, "--repo", REPO, "--rev", &rev]);
+    shard.arg("--out").arg(b.path().join("out"));
+    shard.args(["--", COMMAND]);
+    let mut client = Guard::spawn(shard);
+
+    std::thread::sleep(Duration::from_secs(3));
+    up_a.child.kill().expect("kill the coordinator");
+    up_a.child.wait().expect("reap");
+
+    up_b.event("anchor");
+    let status = client.wait();
+    assert!(status.success(), "the job did not survive the takeover");
+    let log = std::fs::read_to_string(b.path().join("out/shard-1-of-1/task-0.bin")).expect("log");
+    assert!(log.contains("done"), "{log}");
+
+    // The first coordinator comes back and works for the one that took over.
+    let up_a2 = up(&a);
+    up_a2.event("welcome");
 }
 
 /// A CI key builds on the group's machines, without being able to do anything else.

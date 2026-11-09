@@ -489,6 +489,9 @@ pub(crate) struct GroupContext {
     pub relay: Option<RelayUrl>,
     /// Runs the shard commands this machine allows, when it coordinates and works at once.
     pub native: Option<Arc<nuee_exec::NativeRunner>>,
+    /// The keepers before this one in the roster's order: if one of them coordinates too, this
+    /// machine gives way once its jobs are done.
+    pub before: Vec<ServiceLink>,
 }
 
 /// How an anchor stopped.
@@ -499,6 +502,9 @@ pub(crate) enum AnchorEnd {
     /// A new roster names another machine to coordinate.
     HandedOff,
 }
+
+/// How often a keeper that took over looks for one that comes before it and coordinates too.
+const GIVE_WAY_POLL: Duration = Duration::from_secs(20);
 
 /// Time an anchor keeps serving the roster after handing off, so that members read it.
 const HANDOFF_GRACE: Duration = Duration::from_secs(15);
@@ -1046,7 +1052,14 @@ impl Anchor {
         if !replaces {
             return err(409, "this anchor already has this roster or a newer one");
         }
-        let leads = new.keepers().first().is_some_and(|k| k.id == self.net.id());
+        // A keeper that took over stays until the roster really moves the role elsewhere.
+        let me = self.net.id();
+        let first = |r: &Roster| r.keepers().first().map(|k| k.id);
+        let moved = current
+            .open(&g.id)
+            .is_ok_and(|old| first(&old) != first(&new));
+        let keeps = new.keepers().iter().any(|k| k.id == me);
+        let leads = keeps && (!moved || first(&new) == Some(me));
         if !leads && !self.book.lock().await.core.is_empty() {
             return err(409, "jobs are running here; hand off once they are done");
         }
@@ -1412,6 +1425,7 @@ pub(crate) async fn run_anchor(
         None => allowlist(&args)?,
     };
     let allow: Option<Allow> = allow.map(|a| Arc::new(RwLock::new(a)));
+    let before = group.as_ref().map(|g| g.before.clone()).unwrap_or_default();
     let quota = args
         .store
         .as_deref()
@@ -1751,6 +1765,12 @@ pub(crate) async fn run_anchor(
                 None => std::future::pending().await,
             }
         };
+        let give_way = async {
+            if before.is_empty() {
+                std::future::pending::<()>().await;
+            }
+            tokio::time::sleep(GIVE_WAY_POLL).await;
+        };
         tokio::select! {
             () = &mut stop => break,
             () = handoff => {
@@ -1758,6 +1778,15 @@ pub(crate) async fn run_anchor(
                 tokio::time::sleep(HANDOFF_GRACE).await;
                 end = AnchorEnd::HandedOff;
                 break;
+            }
+            () = give_way => {
+                if anchor.book.lock().await.core.is_empty()
+                    && another_coordinates(&anchor.net, &before).await
+                {
+                    ctx.ui.note("a keeper before this one coordinates too; giving way");
+                    end = AnchorEnd::HandedOff;
+                    break;
+                }
             }
             ev = member_ev => match ev {
                 Some(WorkerHostEvent::Ended(reason)) => {
@@ -1802,6 +1831,20 @@ pub(crate) async fn run_anchor(
         tracing::warn!("relay shutdown: {e}");
     }
     Ok(end)
+}
+
+/// Whether one of these keepers answers, which only a coordinating keeper does.
+async fn another_coordinates(net: &Net, keepers: &[ServiceLink]) -> bool {
+    for keeper in keepers {
+        let asked = tokio::time::timeout(
+            Duration::from_secs(10),
+            admin(net, keeper, "GET", "/roster", None),
+        );
+        if matches!(asked.await, Ok(Ok((200, _)))) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Ctrl-C, or SIGTERM from a service manager (systemd, Docker).

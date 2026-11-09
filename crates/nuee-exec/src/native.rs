@@ -862,11 +862,12 @@ impl NativeRunner {
             Sandbox::Bwrap => {
                 let mut c = Command::new("bwrap");
                 c.args(["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]);
-                for path in &view.hide {
+                // bwrap cannot mount over a target reached through a link, like /var/run.
+                for path in view.hide.iter().filter_map(|p| p.canonicalize().ok()) {
                     if path.is_dir() {
-                        c.arg("--tmpfs").arg(path);
-                    } else if path.exists() {
-                        c.args(["--ro-bind", "/dev/null"]).arg(path);
+                        c.arg("--tmpfs").arg(&path);
+                    } else {
+                        c.args(["--ro-bind", "/dev/null"]).arg(&path);
                     }
                 }
                 if self.policy.network

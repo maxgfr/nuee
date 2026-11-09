@@ -124,7 +124,7 @@ left the swarm after 84 tasks</code></pre>
 <p>Things to do this week, with what you need for each. These recipes were tried over the public relays before they were put on this page, between two identities on one Mac; only the names of your files, repositories and machines change. Passing <code>-</code> reads a link from standard input.</p>
 
 <h3 id="ex-try"><a href="#ex-try">Try a team test run alone, in two minutes</a></h3>
-<p><strong>You need:</strong> <code>nuee</code>, <code>git</code>, a recent Node.js and two terminals. There is no account to create, and the tests are this project’s own.</p>
+<p><strong>You need:</strong> <code>nuee</code>, <code>git</code>, a recent Node.js and two terminals, and <code>bwrap</code> (bubblewrap) on Linux. There is no account to create, and the tests are this project’s own.</p>
 <pre class="command"><code>git clone --depth 1 https://github.com/maxgfr/nuee.git
 cd nuee</code></pre>
 <pre class="command"><code>nuee group create try</code></pre>
@@ -185,9 +185,9 @@ lr-0.1    ok           0.3s  local            0.1400</code></pre>
 <pre class="command"><code>nuee group create "team"
 nuee group invite - 5b4e4a16f96e1dcf… --name alice --keeper</code></pre>
 <p>Every machine stays in the group and says exactly what it accepts:</p>
-<pre class="command"><code>nuee group up - --allow-repo https://github.com/acme/app.git --allow-command 'node --test --test-shard={i}/{n} test/*.test.mjs'</code></pre>
-<p>Then, from any machine in the group, in a checkout whose commit is pushed:</p>
-<pre class="command"><code>nuee shard 4 --on - -- 'node --test --test-shard={i}/{n} test/*.test.mjs'</code></pre>
+<pre class="command"><code>nuee group up - --allow-repo https://github.com/acme/app.git --exec-network --allow-command 'npm ci &amp;&amp; node --test --test-shard={i}/{n} test/*.test.mjs'</code></pre>
+<p>Then, from any machine in the group, in a checkout whose commit is pushed, with the command written exactly as the machines allow it:</p>
+<pre class="command"><code>nuee shard 4 --on - -- 'npm ci &amp;&amp; node --test --test-shard={i}/{n} test/*.test.mjs'</code></pre>
 <pre class="output"><code>shard-1-of-4: passed
 shard-2-of-4: FAILED
 shard-3-of-4: passed
@@ -196,7 +196,7 @@ error: 1 of 4 shards failed; logs in nuee-out/shard-3f2a91c07b1d</code></pre>
 <p>A machine that disappears hands its shard to another. Each shard starts from a clean checkout, so the command must install and build what it needs, with <code>--exec-network</code> on <code>nuee group up</code> if that means downloading. Allowing a repository means trusting every commit that can be pushed to it: read <a href="#groups">Permanent groups</a> first.</p>
 
 <h3 id="ex-build"><a href="#ex-build">Build once for the whole team</a></h3>
-<p><strong>You need:</strong> a group, a pushed commit, and the build’s tools installed on the machines that accept it. The machines say what they accept:</p>
+<p><strong>You need:</strong> a group, a pushed commit, the build’s tools installed on the machines that accept it, and <code>bwrap</code> on the Linux ones. The machines say what they accept:</p>
 <pre class="command"><code>nuee group up - --allow-repo https://github.com/acme/app.git --allow-command 'npm ci &amp;&amp; npm run build' --exec-network</code></pre>
 <p>Then, from any machine in the group:</p>
 <pre class="command"><code>nuee build --on - --keep dist -- 'npm ci &amp;&amp; npm run build'</code></pre>

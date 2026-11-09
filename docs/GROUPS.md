@@ -41,7 +41,8 @@ nuee group up - --only-when ac,idle    # only take work on mains power, when not
 ## When a machine dies
 
 Machines invited with `--keeper` replace each other. If the coordinator disappears, the first
-keeper still there takes over within about a minute, members follow it, and `nuee shard` and
+keeper still there takes over (the one at place `p` among the keepers waits about
+`10 s × p` after the coordinator stops answering), members follow it, and `nuee shard` and
 `nuee build` submit what is left to it. A keeper that comes back works for the one that took over.
 Give a group at least two keepers, and pass members the link printed by the last
 `group invite --keeper`, which lists them.
@@ -130,7 +131,8 @@ jobs:
 ```
 
 Use `shards: 8` and `{i}/{n}` in the command for a test suite. `command` must be exactly what the
-machines allow, and they must allow the repository as `https://github.com/you/app.git`.
+machines allow. The repository matches with or without `.git` or a trailing `/`, and whatever the
+case of the host, but the path is compared as written.
 
 A CI key can only submit jobs: it cannot work, change the roster or read the group's files, and
 `nuee group remove - <id>` revokes it. GitHub does not give secrets to pull requests from forks;

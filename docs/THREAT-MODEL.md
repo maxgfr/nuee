@@ -134,7 +134,10 @@ Mitigations *(`nuee-exec::native`, `nuee` CLI `join`, `run`, `sweep`)*:
 Residual risk: **`exec` runs native code on machines that opted in.** The sandbox helpers are
 best effort and absent on some systems. Enabling `exec` for a revision means trusting that code.
 Accepted risk: a `gpu = true` job keeps the real home, which drivers and model caches need, minus
-the secrets of `HOME_SECRETS`; it can write `~/.cache` and `~/Library/Caches` (Hugging Face and MLX
+the secrets of `HOME_SECRETS` and the ssh agent's socket; on Linux it also loses `/tmp`,
+`/var/tmp`, `/run/user` and `/run/dbus`, where a desktop session's sockets live, and macOS denies
+them in the profile. A tool on `PATH` under a hidden area brings only its directory, or its install
+when that has a `lib` or `libexec`, never a parent that may hold its credentials; it can write `~/.cache` and `~/Library/Caches` (Hugging Face and MLX
 downloads, compiled kernels), and files it leaves there outlive the task and other programs may
 later trust them. Accepted risk: on macOS the names and sizes of hidden files stay visible, since
 resolving a path needs them. Accepted risk: with `--exec-network` a task reaches the whole network,
@@ -475,7 +478,7 @@ Mitigations:
   checkout; the machine that receives them refuses a path leaving its directory and creates no
   links. *`nuee-exec::RepoRule::matches`, `kept_path_ok`, `join::native_runner`, `build::unpack`.*
 - A CI key (`group ci-key`) is a member with no work: it cannot join the swarm, and on the API only
-  submits and reads jobs. It is revoked by removing it from the roster. The Action refuses
+  submits and reads jobs, and reads `GET /status` and `GET /roster`; it can never coordinate. It is revoked by removing it from the roster. The Action refuses
   `pull_request_target`, which would run a fork's code next to the key. *`submitter_may`,
   `scripts/action.sh`.*
 - A keeper takes over only when no keeper answers, and members only follow keepers named by a

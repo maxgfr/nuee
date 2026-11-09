@@ -20,12 +20,17 @@ build and test on each other, inside a sandbox:
 ```sh
 nuee group create "team"                       # prints a link that stays valid
 nuee group invite - <machine id> --name alice --keeper
-nuee group up - --allow-repo https://github.com/acme/app.git \
-  --allow-command 'npm ci && npm run build' --exec-network
+nuee group up - --allow-repo https://github.com/acme/app.git --exec-network \
+  --allow-command 'npm ci && npm run build' \
+  --allow-command 'npm ci && npm test -- --shard={i}/{n}'
 
-nuee build --on - --keep dist -- 'npm ci && npm run build'   # dist/ comes back
-nuee shard 8 --on - -- 'npm test -- --shard={i}/{n}'         # eight pieces, on the team's machines
+# from a checkout whose commit is pushed:
+nuee build --on - --keep dist -- 'npm ci && npm run build'           # dist/ comes back
+nuee shard 8 --on - -- 'npm ci && npm test -- --shard={i}/{n}'       # eight pieces
 ```
+
+A machine only runs a command written exactly as one it allows. On Linux, `group up` needs
+`bwrap` (bubblewrap) for its sandbox.
 
 Or from a workflow, with the Action in this repository:
 

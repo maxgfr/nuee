@@ -107,6 +107,69 @@ jobs:
       - run: npx --prefix e2e playwright install --with-deps chromium firefox webkit
         if: startsWith(matrix.stage, 'e2e')
       - run: scripts/check.sh ${{ matrix.stage }}
+  # The Action as a workflow really runs it, on a group that lives on this runner and needs no
+  # repository secret. Only the network between the machines differs from a team's own group.
+  action:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      BUILD_COMMAND: mkdir dist && git rev-parse HEAD > dist/commit.txt
+      TEST_COMMAND: test {i} -le {n}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: build
+          save-if: false
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: scripts/build-tasks.sh && cargo build --locked -p nuee
+      - id: group
+        name: Start a group on this runner
+        run: |
+          nuee=$PWD/target/debug/nuee
+          export NUEE_CONFIG_DIR="$RUNNER_TEMP/machine/config" NUEE_DATA_DIR="$RUNNER_TEMP/machine/data"
+          link=$("$nuee" group create ci 2>/dev/null | grep '#/G/' | head -n 1)
+          key=$("$nuee" group ci-key "$link" --name action 2>/dev/null | grep -E '^[0-9a-f]{64}$')
+          repo="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          nohup "$nuee" group up "$link" --allow-repo "$repo" \
+            --allow-command "$BUILD_COMMAND" --allow-command "$TEST_COMMAND" \
+            >"$RUNNER_TEMP/machine.log" 2>&1 &
+          for _ in $(seq 60); do
+            if grep -q "coordinating the group" "$RUNNER_TEMP/machine.log"; then break; fi
+            sleep 1
+          done
+          grep -q "coordinating the group" "$RUNNER_TEMP/machine.log"
+          echo "link=$link" >>"$GITHUB_OUTPUT"
+          echo "key=$key" >>"$GITHUB_OUTPUT"
+      - id: build
+        uses: ./
+        env:
+          NUEE_BIN: ${{ github.workspace }}/target/debug/nuee
+        with:
+          group: ${{ steps.group.outputs.link }}
+          key: ${{ steps.group.outputs.key }}
+          command: ${{ env.BUILD_COMMAND }}
+          keep: dist
+      - name: The build's output came back, from this commit
+        run: test "$(cat "$OUT/dist/commit.txt")" = "$GITHUB_SHA"
+        env:
+          OUT: ${{ steps.build.outputs.out }}
+      - uses: ./
+        env:
+          NUEE_BIN: ${{ github.workspace }}/target/debug/nuee
+        with:
+          group: ${{ steps.group.outputs.link }}
+          key: ${{ steps.group.outputs.key }}
+          command: ${{ env.TEST_COMMAND }}
+          shards: '3'
+          out: nuee-shards
+      - if: failure()
+        run: cat "$RUNNER_TEMP/machine.log"
   nan-lint:
     strategy:
       fail-fast: false

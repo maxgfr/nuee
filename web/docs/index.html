@@ -213,7 +213,7 @@ error: 1 of 4 shards failed; logs in nuee-out/shard-3f2a91c07b1d</code></pre>
     key: ${{ secrets.NUEE_KEY }}
     command: npm ci &amp;&amp; npm run build
     keep: dist</code></pre>
-<p>With <code>shards: 8</code> and <code>{i}/{n}</code> in the command, the step cuts a test suite instead. Unlike the recipes above, this one has only been tried by running the step’s script by hand.</p>
+<p>With <code>shards: 8</code> and <code>{i}/{n}</code> in the command, the step cuts a test suite instead. Every release first runs this step on GitHub, in both modes, against a group that lives on the runner; a group spread over your own machines has not been part of that test.</p>
 
 <h3 id="ex-drive"><a href="#ex-drive">Keep your group’s files on your own machines</a></h3>
 <p><strong>You need:</strong> a group with two keepers.</p>

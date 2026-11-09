@@ -369,11 +369,12 @@ async fn sandbox_confines_writes_and_network() {
         }
         sb => {
             assert_eq!(Some(sb), expected);
-            let e = r
-                .run(&write, b"", DEADLINE)
-                .await
-                .expect_err("write denied");
-            assert_eq!(e.kind, FailKind::Trap, "{}", e.detail);
+            let written = r.run(&write, b"", DEADLINE).await;
+            // Under bwrap the write may succeed: /home is a tmpfs that dies with the task.
+            if sb == Sandbox::SandboxExec {
+                let e = written.expect_err("write denied");
+                assert_eq!(e.kind, FailKind::Trap, "{}", e.detail);
+            }
             assert!(!target.exists(), "the task wrote to $HOME");
             let e = r
                 .run(&net, b"", DEADLINE)

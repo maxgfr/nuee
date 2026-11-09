@@ -866,9 +866,7 @@ impl NativeRunner {
                     if path.is_dir() {
                         c.arg("--tmpfs").arg(path);
                     } else if path.exists() {
-                        c.args(["--ro-bind", "/dev/null"])
-                            .arg(path)
-                            .arg("/dev/null");
+                        c.args(["--ro-bind", "/dev/null"]).arg(path);
                     }
                 }
                 if self.policy.network

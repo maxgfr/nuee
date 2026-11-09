@@ -50,12 +50,15 @@ export function render({ app, root, route }) {
   /** What a stable name points to now; any other link stands for itself. */
   const resolved = (/** @type {{ kind: string }} */ info) => {
     if (info.kind !== 'name') return info;
+    const looking = h('p', { class: 'muted', role: 'status', i18n: 'site.resolving' });
+    page.append(looking);
     return app.node()
       .then(() => app.bridge.call('resolveName', { link }))
       .then((found) => {
         link = found.link;
         return app.bridge.call('parseLink', { link });
-      });
+      })
+      .finally(() => looking.remove());
   };
 
   app.bridge.call('parseLink', { link }).then(resolved).then(

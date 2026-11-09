@@ -59,7 +59,7 @@ export function parseHash(hash) {
  */
 export function extractLink(text) {
   const s = text.trim().replace(/\s+/g, '');
-  const m = /(?:^|#\/?)([JFXSP])\/([A-Za-z2-7]*)$/.exec(s);
+  const m = /(?:^|#\/?)([JFXSPGN])\/([A-Za-z2-7]*)$/.exec(s);
   if (!m || !m[1]) return null;
   return { kind: m[1], link: `${m[1]}/${(m[2] ?? '').toUpperCase()}` };
 }

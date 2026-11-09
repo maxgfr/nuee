@@ -122,7 +122,7 @@ export interface NodeOptions {
 }
 
 export interface LinkInfo {
-  kind: 'job' | 'file' | 'service' | 'site';
+  kind: 'job' | 'file' | 'service' | 'site' | 'group' | 'name';
   /** Coordinator (job), host (service) or first provider (file, site). */
   peer: string;
   fingerprint: string[];

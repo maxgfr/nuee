@@ -264,6 +264,8 @@ async function handle(op, args, id) {
       });
       return [got, transfer];
     }
+    // parseLink, start, resolveName and fetchSite are also called by site loaders deployed on other
+    // hosts (web/loader/nuee-loader.js): keep their names and shapes.
     case 'resolveName':
       return [await needNode().resolveName(/** @type {OpMap['resolveName']['args']} */ (args).link), []];
     case 'http': {

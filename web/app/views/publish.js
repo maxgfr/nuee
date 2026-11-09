@@ -6,7 +6,6 @@
 import { h, setText, announce, icon, focusOn, download } from '../lib/dom.js';
 import { t } from '../i18n.js';
 import { errorArea, framedNotice, linkPanel } from '../lib/ui.js';
-import { fmtBytes } from '../lib/format.js';
 import { tarFiles } from '../lib/inline.js';
 import { MAX_TOTAL } from './run.js';
 
@@ -35,7 +34,8 @@ export async function loaderFiles(link) {
   const files = await fetchFiles('loader', LOADER);
   const enc = new TextEncoder();
   const dec = new TextDecoder();
-  return files.map((f) =>
+  const readme = { name: 'README.txt', bytes: enc.encode(t('publish.readme')) };
+  return [readme, ...files].map((f) =>
     f.name === 'nuee-loader.js'
       ? {
           name: f.name,
@@ -105,9 +105,15 @@ export function render({ app, root }) {
     errors.clear();
     try {
       const list = await files();
-      if (!list.some((f) => f.name === 'index.html')) throw { code: 'invalid_argument', message: 'no index.html' };
+      if (!list.some((f) => f.name === 'index.html')) {
+        errors.showKey('publish.noIndex');
+        throw null;
+      }
       const total = list.reduce((a, f) => a + f.bytes.length, 0);
-      if (total > MAX_TOTAL) throw { code: 'too_large', message: fmtBytes(total) };
+      if (total > MAX_TOTAL) {
+        errors.showKey('publish.tooLarge');
+        throw null;
+      }
       await app.node();
       const named = list.map((f) => ({ name: `site/${f.name}`, bytes: f.bytes }));
       const res = await app.bridge.call('publishSite', { files: named, name: 'site' }, { move: true });
@@ -147,7 +153,7 @@ export function render({ app, root }) {
       announce(t('publish.ready'));
       focusOn(keepOpen);
     } catch (e) {
-      errors.show(e);
+      if (e !== null) errors.show(e);
       sample.disabled = false;
       input.disabled = false;
       setText(sample, 'publish.sample');

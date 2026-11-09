@@ -22,6 +22,9 @@ test('link routes', () => {
   assert.deepEqual(parseHash(`#/S/${P}`), { view: 'site', link: `S/${P}` });
   assert.deepEqual(parseHash(`#/G/${P}`), { view: 'group', link: `G/${P}` });
   assert.deepEqual(parseHash(`#/N/${P}`), { view: 'site', link: `N/${P}` });
+  // The Open box takes the stable link the publish page hands out, and group links.
+  assert.deepEqual(extractLink(`https://maxgfr.github.io/nuee/#/N/${P}`), { kind: 'N', link: `N/${P}` });
+  assert.deepEqual(extractLink(`#/G/${P}`), { kind: 'G', link: `G/${P}` });
 });
 
 test('unknown and malformed hashes', () => {

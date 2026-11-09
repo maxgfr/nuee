@@ -964,29 +964,50 @@ impl Anchor {
         if save {
             let mut book = self.book.lock().await;
             // A name points to one site: the version it replaces goes away.
+            let same_slot = |s: &SiteRecord| {
+                if req.name.is_some() {
+                    s.name == req.name
+                } else {
+                    s.id == id
+                }
+            };
             let replaced: Vec<String> = book
                 .sites
                 .iter()
-                .filter(|s| s.id != id && req.name.is_some() && s.name == req.name)
+                .filter(|s| same_slot(s))
                 .map(|s| s.id.clone())
                 .collect();
-            book.sites
-                .retain(|s| s.id != id && !replaced.contains(&s.id));
-            if let Some(gateway) = &self.gateway {
-                for old in &replaced {
-                    gateway.remove_site(old);
-                }
-            }
+            book.sites.retain(|s| !same_slot(s));
             book.sites.push(SiteRecord {
                 id: id.clone(),
-                link: req.link,
-                name: req.name,
+                link: req.link.clone(),
+                name: req.name.clone(),
             });
             if let Err(e) = self.save_list("sites.json", &book.sites) {
                 return err(500, format!("{e:#}"));
             }
+            for old in replaced {
+                if !book.sites.iter().any(|s| s.id == old) {
+                    self.forget_site(&old).await;
+                }
+            }
         }
         (201, json!({ "id": id, "path": path }))
+    }
+
+    /// Stops serving and keeping a site nothing points to any more.
+    async fn forget_site(&self, id: &str) {
+        if let Some(gateway) = &self.gateway {
+            gateway.remove_site(id);
+        }
+        if self.group.is_some()
+            && let Ok(hash) = id.parse::<Hash>()
+        {
+            self.acceptor.remove(&hash);
+            if let Err(e) = self.files_hub.untag(&nuee_store::blob_tag(hash)).await {
+                tracing::warn!("cannot drop {hash}: {e}");
+            }
+        }
     }
 
     /// `GET /names/<name>` on the read-only channel: the site's link, served by this machine.
@@ -2109,8 +2130,16 @@ async fn copy_once(net: &Net, leader: &ServiceLink, dir: &Path, ctx: &Ctx) -> an
         }
         // What the group no longer keeps stops being kept here.
         let old: Vec<DriveFile> = load_list(&dir.join("drive.json"))?;
-        for gone in old.iter().filter(|o| !files.iter().any(|f| f.id == o.id)) {
-            if let Ok(hash) = gone.id.parse::<Hash>() {
+        let gone_files = old
+            .iter()
+            .map(|o| &o.id)
+            .filter(|id| !files.iter().any(|f| f.id == **id));
+        let gone_sites = old_sites
+            .iter()
+            .map(|o| &o.id)
+            .filter(|id| !sites.iter().any(|s| s.id == **id));
+        for gone in gone_files.chain(gone_sites) {
+            if let Ok(hash) = gone.parse::<Hash>() {
                 hub.untag(&nuee_store::blob_tag(hash))
                     .await
                     .map_err(crate::store_failure)?;

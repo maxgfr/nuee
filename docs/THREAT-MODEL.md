@@ -492,7 +492,10 @@ Mitigations:
 Residual risk: **every keeper is trusted like an anchor**: it sees the group's secrets and every
 result, and can hand workers manifests. The roster tolerates machines that disappear, not keepers
 that lie. **Any worker on the roster can use the whole API**: jobs, sites, services and the
-group's files, which every keeper can read. **`--allow-repo` trusts every commit that can be pushed
+group's files, which every keeper can read. **A site served by the loader runs on your origin, and
+any member or keeper can change what its name shows**, so its scripts are only as trustworthy as
+the group; the loader also runs the Nuée package from its `--web-base` there. A name's link gives
+whoever holds it the site's decryption key. **`--allow-repo` trusts every commit that can be pushed
 to the repository**, pull requests from anyone with write access included: its code runs in the
 sandbox, with the accepted risks of 4.2, and on the network with `--exec-network`. Shard and build
 results are not recomputed, so a member can report a false pass or hand back a tampered build:

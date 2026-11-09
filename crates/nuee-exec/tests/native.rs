@@ -331,6 +331,25 @@ async fn tasks_see_neither_the_home_nor_the_machine_keys() {
     assert_eq!(out.expect("second task"), b"kept\n");
 }
 
+#[test]
+fn the_home_of_a_repository_left_alone_goes_away() {
+    let f = fixture();
+    let policy = f.policy();
+    let homes = policy.cache_dir.join("homes");
+    let (idle, used) = (homes.join("idle"), homes.join("used"));
+    std::fs::create_dir_all(&idle).expect("idle");
+    std::fs::create_dir_all(&used).expect("used");
+    let long_ago = std::time::SystemTime::now() - Duration::from_secs(31 * 24 * 3600);
+    std::fs::File::open(&idle)
+        .and_then(|d| d.set_modified(long_ago))
+        .expect("age");
+
+    NativeRunner::new(policy);
+
+    assert!(!idle.exists(), "an idle home stayed");
+    assert!(used.exists(), "a recent home went away");
+}
+
 #[tokio::test]
 async fn sandbox_confines_writes_and_network() {
     let f = fixture();

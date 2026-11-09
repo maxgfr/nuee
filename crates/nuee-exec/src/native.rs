@@ -10,7 +10,7 @@ use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
@@ -562,6 +562,7 @@ impl NativeRunner {
         if sandbox == Sandbox::None {
             tracing::warn!("no sandbox-exec or bwrap: native tasks will run without an OS sandbox");
         }
+        forget_idle_homes(&policy.cache_dir.join("homes"));
         Self { policy, sandbox }
     }
 
@@ -767,6 +768,8 @@ impl NativeRunner {
             .join(repo_dir_name(spec.repo.as_str()));
         std::fs::create_dir_all(&dir)?;
         let dir = dir.canonicalize()?;
+        // A home's age is the last time a task used it, whatever the task touched inside.
+        File::open(&dir)?.set_modified(SystemTime::now())?;
         Ok(View {
             write: vec![dir.clone()],
             home: dir,
@@ -1095,6 +1098,30 @@ fn cache_dirs() -> Vec<PathBuf> {
     dirs.into_iter()
         .map(|d| d.canonicalize().unwrap_or(d))
         .collect()
+}
+
+/// How long the home of a repository outlives its last task. It holds caches that can be rebuilt.
+const HOME_KEPT: Duration = Duration::from_secs(30 * 24 * 3600);
+
+/// Takes back the disk of the repositories this machine stopped building.
+fn forget_idle_homes(homes: &Path) {
+    let Ok(entries) = std::fs::read_dir(homes) else {
+        return;
+    };
+    let idle = |path: &Path| {
+        std::fs::metadata(path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > HOME_KEPT)
+    };
+    for path in entries.flatten().map(|e| e.path()) {
+        if idle(&path)
+            && let Err(e) = std::fs::remove_dir_all(&path)
+        {
+            tracing::warn!("cannot remove the idle home {}: {e}", path.display());
+        }
+    }
 }
 
 /// Where a machine keeps personal data and other programs' sockets. A task sees none of it, apart

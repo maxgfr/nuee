@@ -83,6 +83,9 @@ machine. Submitting the same command on the same commit returns the results alre
 
 Add `--fresh` to run again what already has a result, such as a flaky failure.
 
+To compare settings instead of cutting a suite, let `{i}` choose them, as in
+`nuee shard 8 --on - -- 'python3 train.py --config configs/{i}.json'`.
+
 ## Build a commit, once for the whole team
 
 ```sh

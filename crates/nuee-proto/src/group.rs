@@ -10,7 +10,6 @@ use crate::PROTO_VERSION;
 use crate::bounded::{BoundedBytes, BoundedString, BoundedVec};
 use crate::id::{DOMAIN_ROSTER, EndpointId, Signature, Signer, verify_domain};
 use crate::limits::{MAX_PEERS, MAX_ROSTER};
-use crate::manifest::{Manifest, ManifestError, SignedManifest};
 use crate::msg::{ProtoError, decode_with_limit, encode_with_limit};
 
 /// One machine of a group.
@@ -35,6 +34,8 @@ pub struct Roster {
     pub version: u16,
     /// Key of the group.
     pub group: EndpointId,
+    /// Name shown to the group.
+    pub name: BoundedString<64>,
     /// Grows with every change, so that an old roster cannot bring a removed member back.
     pub revision: u64,
     /// The members.
@@ -124,22 +125,6 @@ impl Roster {
     /// Whether this roster may replace `current`: same group and a higher revision.
     pub fn replaces(&self, current: &Roster) -> bool {
         self.group == current.group && self.revision > current.revision
-    }
-
-    /// Opens a manifest received from `coordinator`, the authenticated peer of the connection.
-    /// The peer must be a keeper of this roster and must have signed the manifest itself.
-    pub fn open_manifest(
-        &self,
-        manifest: &SignedManifest,
-        coordinator: &EndpointId,
-    ) -> Result<Manifest, ManifestError> {
-        let keeper = self
-            .member(coordinator)
-            .is_some_and(|m| m.keeper_rank.is_some());
-        if !keeper {
-            return Err(ManifestError::WrongCoordinator);
-        }
-        manifest.open(coordinator)
     }
 }
 

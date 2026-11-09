@@ -18,7 +18,7 @@ use std::net::SocketAddr;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -32,6 +32,8 @@ use nuee_net::{
     EndpointAddr, FrameError, HostEvent, Net, NetConfig, RelayChoice, RelayUrl, WorkerHostEvent,
     recv_console_body, recv_console_hello, recv_msg, send_msg, write_frame,
 };
+use nuee_proto::SignedRoster;
+use nuee_proto::limits::MAX_ROSTER;
 use nuee_proto::limits::{MAX_ASSET, MAX_INLINE_INPUT, MAX_MODULE};
 use nuee_proto::{
     ALPN_HTTP, ALPN_JOB, BoundedBytes, BoundedString, BoundedVec, ByeReason, Caps, EndpointId,
@@ -118,7 +120,7 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         ));
     }
     if args.anchor {
-        return run_anchor(args, ctx).await;
+        return run_anchor(args, ctx, None).await.map(|_| ExitCode::SUCCESS);
     }
     let reg = Registry::load(&Registry::default_path(&ctx.data_dir()?))?;
     let net = ctx.online_net().await?;
@@ -142,11 +144,11 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
 // ---------------------------------------------------------------------------------------------
 // Small helpers.
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn unhex(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn unhex(text: &str) -> Option<Vec<u8>> {
     let t = text.trim().as_bytes();
     let (pairs, rest) = t.as_chunks::<2>();
     if !rest.is_empty() {
@@ -161,7 +163,7 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-fn write_private(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let tmp = path.with_extension("tmp");
     if tmp.exists() {
         std::fs::remove_file(&tmp).with_context(|| format!("removing {}", tmp.display()))?;
@@ -276,7 +278,7 @@ fn derived_key(key: &SecretKey, label: &[u8]) -> SecretKey {
     SecretKey::from_bytes(Hash::of(&buf).as_bytes())
 }
 
-async fn bind_online(
+pub(crate) async fn bind_online(
     ctx: &Ctx,
     secret: SecretKey,
     relay: RelayChoice,
@@ -456,6 +458,55 @@ struct Anchor {
     swarm_url: String,
     gateway: Option<nuee_host::gateway::Gateway>,
     book: Mutex<Book>,
+    group: Option<GroupState>,
+}
+
+/// Who may join an anchor's swarm; changes while it runs when a group's roster does.
+type Allow = Arc<RwLock<HashSet<EndpointId>>>;
+
+fn allowed(allow: &Allow, peer: &EndpointId) -> bool {
+    allow
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .contains(peer)
+}
+
+/// What a permanent group changes in an anchor.
+pub(crate) struct GroupContext {
+    /// Key of the group.
+    pub id: EndpointId,
+    /// Secret of the swarm.
+    pub swarm_secret: [u8; 16],
+    /// Secret of the API.
+    pub admin_secret: [u8; 16],
+    /// Verified current roster.
+    pub roster: SignedRoster,
+    /// Where the roster is kept.
+    pub roster_path: PathBuf,
+    /// State directory of this group's anchor.
+    pub dir: PathBuf,
+    /// The group's relay, which every keeper binds so that members can dial it.
+    pub relay: Option<RelayUrl>,
+}
+
+/// How an anchor stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnchorEnd {
+    /// Asked to stop.
+    Stopped,
+    /// A new roster names another machine to coordinate.
+    HandedOff,
+}
+
+/// Time an anchor keeps serving the roster after handing off, so that members read it.
+const HANDOFF_GRACE: Duration = Duration::from_secs(15);
+
+struct GroupState {
+    id: EndpointId,
+    roster: Mutex<SignedRoster>,
+    path: PathBuf,
+    allow: Allow,
+    handoff: tokio::sync::Notify,
 }
 
 type Reply = (u16, Value);
@@ -909,6 +960,51 @@ impl Anchor {
         }
     }
 
+    /// Takes a newer roster signed by the group key, whoever brings it.
+    async fn update_roster(&self, body: &[u8]) -> Reply {
+        let Some(g) = &self.group else {
+            return err(404, "this anchor is not a group");
+        };
+        let signed: Option<SignedRoster> = serde_json::from_slice::<Value>(body)
+            .ok()
+            .and_then(|v| unhex(v["roster"].as_str()?))
+            .and_then(|b| nuee_proto::decode_with_limit(&b, MAX_ROSTER + 128).ok());
+        let Some(signed) = signed else {
+            return err(400, "malformed roster");
+        };
+        let new = match signed.open(&g.id) {
+            Ok(r) => r,
+            Err(e) => return err(403, format!("roster refused: {e}")),
+        };
+        let mut current = g.roster.lock().await;
+        let replaces = current.open(&g.id).is_ok_and(|c| new.replaces(&c));
+        if !replaces {
+            return err(409, "this anchor already has this roster or a newer one");
+        }
+        let leads = new.keepers().first().is_some_and(|k| k.id == self.net.id());
+        if !leads && !self.book.lock().await.core.is_empty() {
+            return err(409, "jobs are running here; hand off once they are done");
+        }
+        let saved = nuee_proto::encode(&signed).map_err(anyhow::Error::new);
+        if let Err(e) = saved.and_then(|bytes| write_private(&g.path, &bytes)) {
+            return err(500, format!("cannot keep the roster: {e:#}"));
+        }
+        {
+            let mut allow = g
+                .allow
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            allow.clear();
+            allow.extend(new.members.iter().map(|m| m.id));
+            allow.insert(self.files_net.id());
+        }
+        *current = signed;
+        if !leads {
+            g.handoff.notify_one();
+        }
+        (200, json!({ "revision": new.revision }))
+    }
+
     async fn route(&self, method: &str, path: &str, body: &[u8]) -> Reply {
         let path = path.split('?').next().unwrap_or_default();
         let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
@@ -927,6 +1023,14 @@ impl Anchor {
                     }),
                 )
             }
+            ("GET", ["roster"]) => match &self.group {
+                Some(g) => match nuee_proto::encode(&*g.roster.lock().await) {
+                    Ok(bytes) => (200, json!({ "roster": hex(&bytes) })),
+                    Err(e) => err(500, e.to_string()),
+                },
+                None => err(404, "this anchor is not a group"),
+            },
+            ("POST", ["roster"]) => self.update_roster(body).await,
             ("POST", ["jobs"]) => self.submit(body).await,
             ("GET", ["jobs"]) => {
                 let book = self.book.lock().await;
@@ -954,7 +1058,9 @@ impl Anchor {
             ("POST", ["sites"]) => self.add_site(body, true).await,
             ("POST", ["services"]) => self.add_service(body, true).await,
             ("DELETE", [what @ ("sites" | "services"), id]) => self.remove(what, id).await,
-            (_, ["status" | "jobs" | "sites" | "services", ..]) => err(405, "method not allowed"),
+            (_, ["status" | "jobs" | "sites" | "services" | "roster", ..]) => {
+                err(405, "method not allowed")
+            }
             _ => err(404, "not found"),
         }
     }
@@ -1008,10 +1114,18 @@ impl AdminHandler {
         };
         let (status, body) = match req {
             Ok(req) => {
-                let (status, body) = self
-                    .anchor
-                    .route(req.method.as_str(), req.path.as_str(), req.body.as_slice())
-                    .await;
+                let open = req.path.as_str().trim_matches('/') == "roster";
+                let member = match &self.anchor.group {
+                    Some(g) => open || allowed(&g.allow, &peer),
+                    None => true,
+                };
+                let (status, body) = if member {
+                    self.anchor
+                        .route(req.method.as_str(), req.path.as_str(), req.body.as_slice())
+                        .await
+                } else {
+                    err(403, "this machine is not on the group's roster")
+                };
                 tracing::info!(%peer, method = req.method.as_str(), path = req.path.as_str(), status, "admin request");
                 (status, body)
             }
@@ -1072,7 +1186,7 @@ impl ProtocolHandler for AdminHandler {
 #[derive(Debug, Clone)]
 struct Gatekeeper {
     driver: CoordinatorDriver,
-    allow: Option<Arc<HashSet<EndpointId>>>,
+    allow: Option<Allow>,
 }
 
 impl Gatekeeper {
@@ -1110,7 +1224,7 @@ impl Gatekeeper {
 impl ProtocolHandler for Gatekeeper {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
         let peer = conn.remote_id();
-        if self.allow.as_ref().is_some_and(|a| !a.contains(&peer)) {
+        if self.allow.as_ref().is_some_and(|a| !allowed(a, &peer)) {
             tracing::info!(%peer, "peer not on the allowlist: rejected");
             Gatekeeper::reject(conn).await;
             return Ok(());
@@ -1186,29 +1300,49 @@ async fn store_member(
         .map_err(|e| anyhow::anyhow!("the store member cannot join the anchor's swarm: {e}"))
 }
 
-async fn run_anchor(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
+pub(crate) async fn run_anchor(
+    args: Args,
+    ctx: &Ctx,
+    group: Option<GroupContext>,
+) -> anyhow::Result<AnchorEnd> {
     if args.approve && !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
         return Err(fail(
             exit::USAGE,
             "--approve needs an interactive terminal to answer y/N",
         ));
     }
-    let allow = allowlist(&args)?.map(Arc::new);
+    let allow = match &group {
+        Some(g) => {
+            let roster = g.roster.open(&g.id).map_err(anyhow::Error::new)?;
+            Some(roster.members.iter().map(|m| m.id).collect())
+        }
+        None => allowlist(&args)?,
+    };
+    let allow: Option<Allow> = allow.map(|a| Arc::new(RwLock::new(a)));
     let quota = args
         .store
         .as_deref()
         .map(crate::cmd::join::parse_quota)
         .transpose()?;
     let data = ctx.data_dir()?;
-    let dir = data.join("anchor");
+    let dir = group
+        .as_ref()
+        .map_or_else(|| data.join("anchor"), |g| g.dir.clone());
     nuee_store::ensure_private_dir(&dir).map_err(crate::store_failure)?;
     nuee_store::ensure_private_dir(&dir.join("jobs")).map_err(crate::store_failure)?;
-    let admin_path = args
-        .admin_secret_file
-        .clone()
-        .unwrap_or_else(|| dir.join("admin.secret"));
-    let admin_secret = load_or_create_secret(&admin_path)?;
-    let swarm_secret = load_or_create_secret(&dir.join("swarm.secret"))?;
+    let (admin_secret, swarm_secret) = match &group {
+        Some(g) => (g.admin_secret, g.swarm_secret),
+        None => {
+            let admin_path = args
+                .admin_secret_file
+                .clone()
+                .unwrap_or_else(|| dir.join("admin.secret"));
+            (
+                load_or_create_secret(&admin_path)?,
+                load_or_create_secret(&dir.join("swarm.secret"))?,
+            )
+        }
+    };
     let key = ctx.secret()?;
     let files_key = derived_key(&key, b"nuee/anchor-files/0");
 
@@ -1246,7 +1380,10 @@ async fn run_anchor(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 .map_err(|_| anyhow::anyhow!("the embedded relay has a bad URL {url:?}"))?;
             RelayChoice::Custom(vec![parsed])
         }
-        None => ctx.relay_choice()?,
+        None => match group.as_ref().and_then(|g| g.relay.clone()) {
+            Some(url) if ctx.global.relay.is_none() => RelayChoice::Custom(vec![url]),
+            _ => ctx.relay_choice()?,
+        },
     };
     let net = bind_online(ctx, key, relay.clone(), ctx.global.relay_only).await?;
     let files_net = bind_online(ctx, files_key, relay, ctx.global.relay_only).await?;
@@ -1352,6 +1489,16 @@ async fn run_anchor(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         swarm_url: swarm_url.clone(),
         gateway: gateway.clone(),
         book: Mutex::new(Book::default()),
+        group: match (group, &allow) {
+            (Some(g), Some(allow)) => Some(GroupState {
+                id: g.id,
+                roster: Mutex::new(g.roster),
+                path: g.roster_path,
+                allow: allow.clone(),
+                handoff: tokio::sync::Notify::new(),
+            }),
+            _ => None,
+        },
     });
 
     // Resume what was there before the restart.
@@ -1413,9 +1560,10 @@ async fn run_anchor(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         secret: admin_secret,
         gate: Arc::new(Admission::new(AdmitConfig::default())),
     };
-    let mut allow = allow;
-    if let Some(a) = &mut allow {
-        Arc::make_mut(a).insert(files_net.id());
+    if let Some(a) = &allow {
+        a.write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(files_net.id());
     }
     let router = net
         .router()
@@ -1462,7 +1610,9 @@ async fn run_anchor(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             "relay": relay_str,
             "gateway": gateway_addr.map(|a| format!("http://{a}")),
             "fingerprint": nuee_proto::fingerprint(&net.id()).to_vec(),
-            "allowlist": allow.as_ref().map(|a| a.len()),
+            "allowlist": allow.as_ref().map(|a| {
+                a.read().unwrap_or_else(std::sync::PoisonError::into_inner).len()
+            }),
             "store": quota,
         }),
     );
@@ -1485,7 +1635,14 @@ async fn run_anchor(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
 
     let stop = stop_signal();
     tokio::pin!(stop);
+    let mut end = AnchorEnd::Stopped;
     loop {
+        let handoff = async {
+            match &anchor.group {
+                Some(g) => g.handoff.notified().await,
+                None => std::future::pending().await,
+            }
+        };
         let member_ev = async {
             match &mut member_handle {
                 Some(h) => h.events.recv().await,
@@ -1494,6 +1651,12 @@ async fn run_anchor(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         };
         tokio::select! {
             () = &mut stop => break,
+            () = handoff => {
+                ctx.ui.note("the roster names another machine to coordinate; handing off");
+                tokio::time::sleep(HANDOFF_GRACE).await;
+                end = AnchorEnd::HandedOff;
+                break;
+            }
             ev = member_ev => match ev {
                 Some(WorkerHostEvent::Ended(reason)) => {
                     tracing::warn!("the store member left the swarm ({reason:?})");
@@ -1536,7 +1699,7 @@ async fn run_anchor(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
     {
         tracing::warn!("relay shutdown: {e}");
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(end)
 }
 
 /// Ctrl-C, or SIGTERM from a service manager (systemd, Docker).

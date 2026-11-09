@@ -7,6 +7,7 @@ mod cmd {
     pub mod embed;
     pub mod expose;
     pub mod get;
+    pub mod group;
     pub mod id;
     pub mod join;
     pub mod pin;
@@ -139,6 +140,8 @@ enum Command {
     Get(cmd::get::Args),
     /// Keep a copy of a share (ciphertext only) and serve it
     Pin(cmd::pin::Args),
+    /// Run a permanent group of machines
+    Group(cmd::group::Args),
     /// Serve every pinned item until Ctrl-C
     Serve(cmd::serve::Args),
     /// Train a model across the swarm
@@ -225,7 +228,7 @@ pub fn store_failure(e: StoreError) -> anyhow::Error {
 }
 
 /// Exit code of an error: the one it carries, else 1.
-fn code_of(e: &anyhow::Error) -> u8 {
+pub(crate) fn code_of(e: &anyhow::Error) -> u8 {
     e.downcast_ref::<Failure>().map_or(exit::ERROR, |f| f.code)
 }
 
@@ -313,7 +316,7 @@ impl Ctx {
     }
 
     /// Closes every endpoint registered with [`Ctx::keep`].
-    async fn close_nets(&self) {
+    pub(crate) async fn close_nets(&self) {
         let nets = std::mem::take(
             &mut *self
                 .nets
@@ -413,6 +416,7 @@ async fn dispatch(command: Command, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         Command::Share(a) => cmd::share::run(a, ctx).await,
         Command::Get(a) => cmd::get::run(a, ctx).await,
         Command::Pin(a) => cmd::pin::run(a, ctx).await,
+        Command::Group(a) => cmd::group::run(a, ctx).await,
         Command::Serve(a) => cmd::serve::run(a, ctx).await,
         Command::Train(a) => cmd::train::run(a, ctx).await,
         Command::Sweep(a) => cmd::sweep::run(a, ctx).await,

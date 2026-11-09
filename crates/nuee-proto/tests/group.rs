@@ -19,28 +19,9 @@ fn roster(revision: u64, members: Vec<Member>) -> Roster {
     Roster {
         version: PROTO_VERSION,
         group: key(1).public(),
+        name: BoundedString::try_from("lab").unwrap(),
         revision,
         members: members.try_into().unwrap(),
-    }
-}
-
-fn manifest(coordinator: EndpointId) -> Manifest {
-    Manifest {
-        version: PROTO_VERSION,
-        job: 1,
-        name: BoundedString::try_from("job").unwrap(),
-        kind: TaskKind::Wasm,
-        module: Some(Hash::of(b"m")),
-        module_size: 10,
-        max_memory: 1 << 20,
-        assets: BoundedVec::new(),
-        tasks: 1,
-        verify: VerifyPolicy::default(),
-        compare: Comparator::Exact,
-        deadline_ms: 60_000,
-        exec: None,
-        train: None,
-        coordinator,
     }
 }
 
@@ -105,36 +86,6 @@ fn an_old_roster_cannot_replace_a_newer_one() {
     let mut other_group = roster(3, vec![member(3, Some(0))]);
     other_group.group = key(8).public();
     assert!(!other_group.replaces(&old));
-}
-
-#[test]
-fn only_a_keeper_can_hand_out_manifests() {
-    let r = roster(1, vec![member(2, Some(0)), member(3, None)]);
-
-    let by_keeper = manifest(key(2).public()).sign(&key(2)).unwrap();
-    assert!(r.open_manifest(&by_keeper, &key(2).public()).is_ok());
-
-    let by_worker = manifest(key(3).public()).sign(&key(3)).unwrap();
-    assert!(matches!(
-        r.open_manifest(&by_worker, &key(3).public()),
-        Err(ManifestError::WrongCoordinator)
-    ));
-
-    let by_stranger = manifest(key(7).public()).sign(&key(7)).unwrap();
-    assert!(matches!(
-        r.open_manifest(&by_stranger, &key(7).public()),
-        Err(ManifestError::WrongCoordinator)
-    ));
-}
-
-#[test]
-fn a_keeper_cannot_pass_off_a_manifest_it_did_not_sign() {
-    let r = roster(1, vec![member(2, Some(0)), member(3, Some(1))]);
-    let signed_by_other = manifest(key(3).public()).sign(&key(3)).unwrap();
-    assert!(matches!(
-        r.open_manifest(&signed_by_other, &key(2).public()),
-        Err(ManifestError::BadSignature)
-    ));
 }
 
 fn group_link(bootstrap: Vec<Provider>) -> Link {

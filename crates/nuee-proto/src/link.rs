@@ -110,6 +110,24 @@ pub enum LinkError {
     WrongKind,
 }
 
+impl GroupLink {
+    /// Secret of the group's swarm on `nuee/job/0`.
+    pub fn swarm_secret(&self) -> [u8; 16] {
+        self.derive("nuee group swarm secret 0")
+    }
+
+    /// Secret of the group's API on `nuee/http/0`.
+    pub fn admin_secret(&self) -> [u8; 16] {
+        self.derive("nuee group admin secret 0")
+    }
+
+    fn derive(&self, context: &str) -> [u8; 16] {
+        let mut out = [0; 16];
+        out.copy_from_slice(&blake3::derive_key(context, &self.secret)[..16]);
+        out
+    }
+}
+
 impl FileLink {
     /// Same link without the decryption key.
     pub fn pin_link(&self) -> PinLink {

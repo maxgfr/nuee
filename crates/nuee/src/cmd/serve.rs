@@ -32,7 +32,6 @@ use nuee_net::{
     EndpointAddr, FrameError, HostEvent, Net, NetConfig, RelayChoice, RelayUrl, WorkerHostEvent,
     recv_console_body, recv_console_hello, recv_msg, send_msg, write_frame,
 };
-use nuee_proto::SignedRoster;
 use nuee_proto::limits::MAX_ROSTER;
 use nuee_proto::limits::{MAX_ASSET, MAX_INLINE_INPUT, MAX_MODULE};
 use nuee_proto::{
@@ -40,6 +39,7 @@ use nuee_proto::{
     FileLink, Hash, Header, HttpRequest, HttpResponse, JobLink, Link, LocalLimits, MAX_HTTP_MSG,
     Manifest, Msg, Payload, SecretKey, ServiceLink, TaskKind,
 };
+use nuee_proto::{DOMAIN_DELEGATE, SignedRoster, verify_domain};
 use nuee_store::{FilesAcceptor, HubConfig, Offer, Registry, StoreHub};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -487,6 +487,8 @@ pub(crate) struct GroupContext {
     pub dir: PathBuf,
     /// The group's relay, which every keeper binds so that members can dial it.
     pub relay: Option<RelayUrl>,
+    /// Runs the shard commands this machine allows, when it coordinates and works at once.
+    pub native: Option<Arc<nuee_exec::NativeRunner>>,
 }
 
 /// How an anchor stopped.
@@ -506,8 +508,13 @@ struct GroupState {
     roster: Mutex<SignedRoster>,
     path: PathBuf,
     allow: Allow,
+    /// Short-lived keys acting for a member; forgotten when the roster changes.
+    delegated: Allow,
     handoff: tokio::sync::Notify,
 }
+
+/// Most short-lived keys remembered at once.
+const MAX_DELEGATED: usize = 4096;
 
 type Reply = (u16, Value);
 
@@ -960,6 +967,41 @@ impl Anchor {
         }
     }
 
+    /// Lets `peer`, a short-lived key, act for the member that signed it. One machine cannot
+    /// use its own key twice at once, and `group up` already holds it.
+    async fn delegate(&self, peer: &EndpointId, body: &[u8]) -> Reply {
+        let Some(g) = &self.group else {
+            return err(404, "this anchor is not a group");
+        };
+        let parsed = serde_json::from_slice::<Value>(body).ok().and_then(|v| {
+            let member: EndpointId = v["member"].as_str()?.parse().ok()?;
+            let sig: nuee_proto::Signature =
+                nuee_proto::decode(&unhex(v["sig"].as_str()?)?).ok()?;
+            Some((member, sig))
+        });
+        let Some((member, sig)) = parsed else {
+            return err(400, "malformed delegation");
+        };
+        let listed = g
+            .roster
+            .lock()
+            .await
+            .open(&g.id)
+            .is_ok_and(|r| r.member(&member).is_some());
+        if !listed || !verify_domain(&member, DOMAIN_DELEGATE, peer.as_bytes(), &sig) {
+            return err(403, "this machine is not on the group's roster");
+        }
+        let mut delegated = g
+            .delegated
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if delegated.len() >= MAX_DELEGATED {
+            delegated.clear();
+        }
+        delegated.insert(*peer);
+        (200, json!({}))
+    }
+
     /// Takes a newer roster signed by the group key, whoever brings it.
     async fn update_roster(&self, body: &[u8]) -> Reply {
         let Some(g) = &self.group else {
@@ -998,6 +1040,10 @@ impl Anchor {
             allow.extend(new.members.iter().map(|m| m.id));
             allow.insert(self.files_net.id());
         }
+        g.delegated
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
         *current = signed;
         if !leads {
             g.handoff.notify_one();
@@ -1114,12 +1160,16 @@ impl AdminHandler {
         };
         let (status, body) = match req {
             Ok(req) => {
-                let open = req.path.as_str().trim_matches('/') == "roster";
+                let path = req.path.as_str().trim_matches('/');
                 let member = match &self.anchor.group {
-                    Some(g) => open || allowed(&g.allow, &peer),
+                    Some(g) => {
+                        path == "roster" || allowed(&g.allow, &peer) || allowed(&g.delegated, &peer)
+                    }
                     None => true,
                 };
-                let (status, body) = if member {
+                let (status, body) = if path == "delegate" && req.method.as_str() == "POST" {
+                    self.anchor.delegate(&peer, req.body.as_slice()).await
+                } else if member {
                     self.anchor
                         .route(req.method.as_str(), req.path.as_str(), req.body.as_slice())
                         .await
@@ -1451,7 +1501,10 @@ pub(crate) async fn run_anchor(
             local_slots: args.local_slots,
             ..DriverConfig::default()
         },
-        Arc::new(crate::cmd::run::WasmExec::new(None)?),
+        Arc::new(match group.as_ref().and_then(|g| g.native.clone()) {
+            Some(native) => crate::cmd::run::WasmExec::new(None)?.with_native(native),
+            None => crate::cmd::run::WasmExec::new(None)?,
+        }),
         Arc::new(hub.clone()),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -1495,6 +1548,7 @@ pub(crate) async fn run_anchor(
                 roster: Mutex::new(g.roster),
                 path: g.roster_path,
                 allow: allow.clone(),
+                delegated: Arc::default(),
                 handoff: tokio::sync::Notify::new(),
             }),
             _ => None,
@@ -1878,7 +1932,7 @@ pub(crate) async fn admin(
     Ok((resp.status, value))
 }
 
-fn admin_error(status: u16, value: &Value) -> anyhow::Error {
+pub(crate) fn admin_error(status: u16, value: &Value) -> anyhow::Error {
     let msg = value["error"].as_str().unwrap_or("unexpected answer");
     let code = if status >= 500 {
         exit::NETWORK
@@ -1905,13 +1959,51 @@ pub(crate) async fn submit_to_anchor(
     ctx: &Ctx,
     link: &ServiceLink,
     net: &Net,
-    mut job: AnchorJob,
+    job: AnchorJob,
     follow: Option<PathBuf>,
 ) -> anyhow::Result<ExitCode> {
+    let hub = StoreHub::memory(net, HubConfig::default());
+    let router = net
+        .router()
+        .accept(iroh_blobs::ALPN, hub.protocol())
+        .spawn();
+    let res = send_job(&hub, link, net, job).await;
+    let res = match res {
+        Ok(r) => after_submit(ctx, link, net, r, follow).await,
+        Err(e) => Err(e),
+    };
+    // Shutting the router down closes the endpoint too.
+    if let Err(e) = router.shutdown().await {
+        tracing::debug!("closing the endpoint: {e}");
+    }
+    res
+}
+
+/// Uploads one job through a router already serving `hub`; returns its number on the anchor.
+pub(crate) async fn post_job(
+    net: &Net,
+    hub: &StoreHub,
+    link: &ServiceLink,
+    job: AnchorJob,
+) -> anyhow::Result<u64> {
+    let (status, value) = send_job(hub, link, net, job).await?;
+    if status != 200 && status != 201 {
+        return Err(admin_error(status, &value));
+    }
+    value["job"]
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("the anchor gave no job number"))
+}
+
+async fn send_job(
+    hub: &StoreHub,
+    link: &ServiceLink,
+    net: &Net,
+    mut job: AnchorJob,
+) -> anyhow::Result<(u16, Value)> {
     job.manifest.coordinator = link.host;
     let manifest_bytes = nuee_proto::encode(&job.manifest)?;
     let bundle = make_bundle(&job.inputs)?;
-    let hub = StoreHub::memory(net, HubConfig::default());
     if !job.module.is_empty() {
         hub.add_bytes(Bytes::from(std::mem::take(&mut job.module)))
             .await
@@ -1928,10 +2020,6 @@ pub(crate) async fn submit_to_anchor(
         .await
         .map_err(crate::store_failure)?;
     hub.gate().admit(link.host);
-    let router = net
-        .router()
-        .accept(iroh_blobs::ALPN, hub.protocol())
-        .spawn();
     let sub = Submission {
         manifest: hex(&manifest_bytes),
         inputs: job.inputs.iter().map(|i| Hash::of(i).to_string()).collect(),
@@ -1954,14 +2042,6 @@ pub(crate) async fn submit_to_anchor(
     .await;
     // The anchor has fetched every blob once it answers.
     hub.gate().revoke(link.host);
-    let res = match res {
-        Ok(r) => after_submit(ctx, link, net, r, follow).await,
-        Err(e) => Err(e),
-    };
-    // Shutting the router down closes the endpoint too.
-    if let Err(e) = router.shutdown().await {
-        tracing::debug!("closing the endpoint: {e}");
-    }
     res
 }
 
@@ -1995,7 +2075,7 @@ async fn after_submit(
 }
 
 /// Polls a job on the anchor until it is done, then downloads its results bundle.
-async fn follow_job(
+pub(crate) async fn follow_job(
     ctx: &Ctx,
     link: &ServiceLink,
     net: &Net,

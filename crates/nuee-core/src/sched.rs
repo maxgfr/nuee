@@ -75,7 +75,13 @@ pub(crate) fn routable(caps: &Caps, manifest: &Manifest) -> bool {
     if let Some(exec) = &manifest.exec {
         if is_exec(kind) {
             let wanted = format!("{}@{}", exec.repo.as_str(), exec.rev.as_str());
-            if !caps.exec_allow.iter().any(|a| a.as_str() == wanted) {
+            // `repo@*` is a standing rule of the worker; it still checks each command itself.
+            let any_rev = format!("{}@*", exec.repo.as_str());
+            if !caps
+                .exec_allow
+                .iter()
+                .any(|a| a.as_str() == wanted || a.as_str() == any_rev)
+            {
                 return false;
             }
         }

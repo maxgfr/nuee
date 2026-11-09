@@ -9,11 +9,12 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use iroh::RelayUrl;
+use nuee_exec::RepoRule;
 use nuee_net::{Net, RelayChoice};
 use nuee_proto::limits::MAX_ROSTER;
 use nuee_proto::{
-    BoundedString, BoundedVec, EndpointId, GroupLink, JobLink, Link, Member, PROTO_VERSION,
-    Provider, Roster, SecretKey, ServiceLink, SignedRoster,
+    BoundedString, BoundedVec, DOMAIN_DELEGATE, EndpointId, GroupLink, JobLink, Link, Member,
+    PROTO_VERSION, Provider, Roster, SecretKey, ServiceLink, SignedRoster,
 };
 use serde_json::{Value, json};
 
@@ -93,6 +94,84 @@ struct UpArgs {
     /// Let allowed native commands use the network
     #[arg(long)]
     exec_network: bool,
+    /// Accept `nuee shard` work at any commit of this repository, inside the sandbox
+    #[arg(long, value_name = "URL", requires = "allow_command")]
+    allow_repo: Option<String>,
+    /// The only shard command accepted from --allow-repo; {i} and {n} stand for numbers (repeat)
+    #[arg(long, value_name = "COMMAND", requires = "allow_repo")]
+    allow_command: Vec<String>,
+    /// Fetch the --allow-repo URL from a local clone instead (air-gapped machines, tests)
+    #[arg(long, value_name = "URL=PATH", requires = "allow_repo")]
+    exec_mirror: Option<String>,
+    /// Only take work when this holds: `ac` (on mains power), `idle` (the machine is not busy)
+    #[arg(long, value_name = "CONDITION", value_delimiter = ',')]
+    only_when: Vec<Condition>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Condition {
+    Ac,
+    Idle,
+}
+
+/// Whether the machine runs on mains power; `true` when that cannot be told (a desktop).
+fn on_mains() -> bool {
+    if cfg!(target_os = "macos") {
+        return std::process::Command::new("pmset")
+            .args(["-g", "batt"])
+            .output()
+            .map_or(true, |o| {
+                String::from_utf8_lossy(&o.stdout).contains("AC Power")
+            });
+    }
+    let Ok(supplies) = std::fs::read_dir("/sys/class/power_supply") else {
+        return true;
+    };
+    let read = |p: std::path::PathBuf| std::fs::read_to_string(p).unwrap_or_default();
+    let mains: Vec<_> = supplies
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| read(p.join("type")).trim() == "Mains")
+        .collect();
+    mains.is_empty() || mains.iter().any(|p| read(p.join("online")).trim() == "1")
+}
+
+fn load_average() -> Option<f64> {
+    let text = if cfg!(target_os = "macos") {
+        let out = std::process::Command::new("sysctl")
+            .args(["-n", "vm.loadavg"])
+            .output()
+            .ok()?;
+        String::from_utf8_lossy(&out.stdout).replace(['{', '}'], " ")
+    } else {
+        std::fs::read_to_string("/proc/loadavg").ok()?
+    };
+    text.split_whitespace().next()?.parse().ok()
+}
+
+/// Whether less than half the cores are busy; `true` when that cannot be told.
+fn machine_idle() -> bool {
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    load_average().is_none_or(|load| load < cores as f64 / 2.0)
+}
+
+/// Whether work may start now. `idle` is only checked here: once working, the machine is busy
+/// because of the work itself.
+fn may_start(only_when: &[Condition]) -> bool {
+    only_when.iter().all(|c| match c {
+        Condition::Ac => on_mains(),
+        Condition::Idle => machine_idle(),
+    })
+}
+
+/// Returns once the machine has been unplugged.
+async fn mains_lost(only_when: &[Condition]) {
+    if !only_when.contains(&Condition::Ac) {
+        return std::future::pending().await;
+    }
+    while on_mains() {
+        tokio::time::sleep(POLL).await;
+    }
 }
 
 /// Runs a `nuee group` verb.
@@ -190,6 +269,31 @@ fn owner_key(ctx: &Ctx, group: &EndpointId) -> anyhow::Result<SecretKey> {
     let bytes = std::fs::read(&path).map_err(|_| refused())?;
     let bytes: [u8; 32] = bytes.try_into().map_err(|_| refused())?;
     Ok(SecretKey::from_bytes(&bytes))
+}
+
+/// An endpoint that may act for this machine on the coordinating keeper, and that keeper.
+pub(crate) async fn member_session(
+    link_text: &str,
+    ctx: &Ctx,
+) -> anyhow::Result<(Net, ServiceLink)> {
+    let link = parse_link(link_text)?;
+    let net = control_net(ctx, &link).await?;
+    let (_, roster) = newest_roster(&net, &link, ctx)
+        .await?
+        .ok_or_else(|| fail(exit::NETWORK, "no machine of the group answered"))?;
+    let leader = roster.keepers()[0].id;
+    let target = service_link(&link, leader, &group_relay(&link).unwrap_or_default())?;
+    let key = ctx.secret()?;
+    let sig = nuee_proto::sign_domain(&key, DOMAIN_DELEGATE, net.id().as_bytes());
+    let body = json!({
+        "member": key.public().to_string(),
+        "sig": serve::hex(&nuee_proto::encode(&sig)?),
+    });
+    let (status, value) = serve::admin(&net, &target, "POST", "/delegate", Some(&body)).await?;
+    if status != 200 {
+        return Err(serve::admin_error(status, &value));
+    }
+    Ok((net, target))
 }
 
 fn group_relay(link: &GroupLink) -> Option<String> {
@@ -584,10 +688,24 @@ fn join_args(up: &UpArgs, link: String) -> super::join::Args {
         allow_exec: up.allow_exec.clone(),
         exec_approvals: up.exec_approvals.clone(),
         exec_network: up.exec_network,
-        exec_mirror: None,
+        exec_mirror: up.exec_mirror.clone(),
         store: None,
         llm: None,
+        repo_rules: Vec::new(),
     }
+}
+
+/// The standing shard rules asked for on the command line.
+fn repo_rules(up: &UpArgs) -> anyhow::Result<Vec<RepoRule>> {
+    let Some(repo) = &up.allow_repo else {
+        return Ok(Vec::new());
+    };
+    up.allow_command
+        .iter()
+        .map(|c| {
+            RepoRule::new(repo, c).map_err(|e| fail(exit::USAGE, format!("--allow-repo: {e}")))
+        })
+        .collect()
 }
 
 /// Waits, or returns `true` when the user pressed Ctrl-C meanwhile.
@@ -603,6 +721,17 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
     let link = parse_link(&args.link)?;
     let me = ctx.secret()?.public();
     let relay = group_relay(&link).unwrap_or_default();
+    let rules = repo_rules(&args)?;
+    let joining = |url: String| super::join::Args {
+        repo_rules: rules.clone(),
+        ..join_args(&args, url)
+    };
+    let native = if rules.is_empty() {
+        None
+    } else {
+        super::join::native_runner(&joining(String::new()), &[], ctx)?
+    };
+    let mut held_back = false;
     ctx.ui.say(&format!(
         "group fingerprint {}  (compare with the group's other machines)",
         nuee_proto::fingerprint_string(&link.group)
@@ -653,6 +782,7 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 roster_path: roster_path(ctx, &link.group)?,
                 dir: group_dir.join("anchor"),
                 relay: relay.parse().ok(),
+                native: native.clone(),
             };
             match serve::run_anchor(anchor_args(&args), ctx, Some(context)).await? {
                 AnchorEnd::Stopped => return Ok(ExitCode::SUCCESS),
@@ -663,6 +793,18 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             }
         }
 
+        if !may_start(&args.only_when) {
+            if !held_back {
+                ctx.ui.note("waiting for the conditions of --only-when");
+                held_back = true;
+            }
+            if pause(ctx).await {
+                return Ok(ExitCode::SUCCESS);
+            }
+            continue;
+        }
+        held_back = false;
+
         let job = Link::Job(JobLink {
             coordinator: leader,
             relay: BoundedString::try_from(relay.as_str())
@@ -671,7 +813,7 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         })
         .to_url(&ctx.global.web_base);
         let target = service_link(&link, leader, &relay)?;
-        let joined = super::join::run(join_args(&args, job), ctx);
+        let joined = super::join::run(joining(job), ctx);
         let changed = roster_changed(&net, &link, &target, roster.revision, ctx);
         tokio::pin!(joined);
         tokio::pin!(changed);
@@ -684,6 +826,7 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 Err(e) => return Err(e),
             },
             () = &mut changed => ctx.ui.note("the group's roster changed"),
+            () = mains_lost(&args.only_when) => ctx.ui.note("unplugged: leaving until --only-when holds"),
             () = crate::ctrl_c() => return Ok(ExitCode::SUCCESS),
         }
         if pause(ctx).await {

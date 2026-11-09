@@ -15,6 +15,7 @@ mod cmd {
     pub mod run;
     pub mod selftest;
     pub mod serve;
+    pub mod shard;
     pub mod share;
     pub mod site;
     pub mod sweep;
@@ -140,6 +141,8 @@ enum Command {
     Get(cmd::get::Args),
     /// Keep a copy of a share (ciphertext only) and serve it
     Pin(cmd::pin::Args),
+    /// Cut a test suite across a group's machines
+    Shard(cmd::shard::Args),
     /// Run a permanent group of machines
     Group(cmd::group::Args),
     /// Serve every pinned item until Ctrl-C
@@ -417,6 +420,7 @@ async fn dispatch(command: Command, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         Command::Get(a) => cmd::get::run(a, ctx).await,
         Command::Pin(a) => cmd::pin::run(a, ctx).await,
         Command::Group(a) => cmd::group::run(a, ctx).await,
+        Command::Shard(a) => cmd::shard::run(a, ctx).await,
         Command::Serve(a) => cmd::serve::run(a, ctx).await,
         Command::Train(a) => cmd::train::run(a, ctx).await,
         Command::Sweep(a) => cmd::sweep::run(a, ctx).await,

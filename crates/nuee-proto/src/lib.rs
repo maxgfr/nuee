@@ -21,10 +21,10 @@ pub use features::{ALLOWED_PROPOSALS, Proposal, WASM_FEATURES};
 pub use fingerprint::{fingerprint, fingerprint_string};
 pub use group::{Member, Roster, RosterError, SignedRoster};
 pub use id::{
-    DOMAIN_MANIFEST, DOMAIN_PIN, DOMAIN_RESULT, DOMAIN_ROSTER, EndpointId, Hash, HashParseError,
-    PROOF_HELLO, PROOF_HTTP, PROOF_PIN, PROOF_TCP, PublicKey, RandomError, SecretKey, Signature,
-    Signer, check_proof, new_secret16, proof, result_message, sign_domain, sign_result,
-    verify_domain, verify_result,
+    DOMAIN_DELEGATE, DOMAIN_MANIFEST, DOMAIN_PIN, DOMAIN_RESULT, DOMAIN_ROSTER, EndpointId, Hash,
+    HashParseError, PROOF_HELLO, PROOF_HTTP, PROOF_PIN, PROOF_TCP, PublicKey, RandomError,
+    SecretKey, Signature, Signer, check_proof, new_secret16, proof, result_message, sign_domain,
+    sign_result, verify_domain, verify_result,
 };
 pub use job_toml::{JobError, JobKind, JobToml};
 pub use limits::LocalLimits;

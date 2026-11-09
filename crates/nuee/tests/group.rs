@@ -157,6 +157,102 @@ fn start_relay(node: &Node) -> (Guard, String) {
     (guard, url)
 }
 
+fn git(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .current_dir(dir)
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.org"])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .output()
+        .expect("git");
+    assert!(out.status.success(), "git {args:?} failed");
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// A shard whose number is even fails: the command is the test suite of the repository.
+#[test]
+fn shards_run_on_the_group_and_failures_are_results() {
+    const REPO: &str = "https://example.invalid/team/app.git";
+    const COMMAND: &str = "sh check.sh {i} {n}";
+
+    let relay_node = Node::new();
+    let (_relay, relay) = start_relay(&relay_node);
+    let (lead, worker, stranger) = (Node::new(), Node::new(), Node::new());
+
+    let source = tempfile::tempdir().expect("tempdir");
+    let dir = source.path();
+    git(dir, &["init", "-q", "-b", "main"]);
+    let script = "echo \"shard $1 of $2\"\n[ $(($1 % 2)) -eq 1 ]\n";
+    std::fs::write(dir.join("check.sh"), script).expect("script");
+    git(dir, &["add", "check.sh"]);
+    git(dir, &["commit", "-q", "-m", "tests"]);
+    let rev = git(dir, &["rev-parse", "HEAD"]);
+    let mirror = format!("{REPO}={}", dir.display());
+
+    let mut create = lead.with_relay(&relay);
+    create.args(["group", "create", "team"]);
+    let (status, out) = finish(create);
+    assert!(status.success(), "group create failed: {out:?}");
+    let link = named(&out, "link")["link"]
+        .as_str()
+        .expect("link")
+        .to_owned();
+    let mut invite = lead.with_relay(&relay);
+    invite.args(["group", "invite", &link, &worker.id(), "--name", "w"]);
+    let (status, out) = finish(invite);
+    assert!(status.success(), "group invite failed: {out:?}");
+
+    let up = |node: &Node| {
+        let mut c = node.with_relay(&relay);
+        c.args(["group", "up", &link, "--slots", "1"]);
+        c.args(["--allow-repo", REPO, "--allow-command", COMMAND]);
+        c.args(["--exec-mirror", &mirror]);
+        Guard::spawn(c)
+    };
+    let lead_up = up(&lead);
+    lead_up.event("anchor");
+    let worker_up = up(&worker);
+    worker_up.event("welcome");
+
+    let shard = |node: &Node, out_dir: &Path| {
+        let mut c = node.with_relay(&relay);
+        c.args(["shard", "4", "--on", &link, "--repo", REPO, "--rev", &rev]);
+        c.arg("--out").arg(out_dir);
+        c.args(["--", COMMAND]);
+        c
+    };
+
+    // Holding the link is not enough: the stranger is not on the roster.
+    let refused = stranger.path().join("out");
+    let (status, _) = finish(shard(&stranger, &refused));
+    assert_eq!(status.code(), Some(5), "a stranger cannot submit");
+
+    let logs = worker.path().join("logs");
+    let (status, out) = finish(shard(&worker, &logs));
+    assert_eq!(status.code(), Some(1), "two shards fail: {out:?}");
+    let results: Vec<(String, bool)> = out
+        .iter()
+        .filter(|e| e["event"] == "shard")
+        .map(|e| {
+            (
+                e["name"].as_str().expect("name").to_owned(),
+                e["passed"].as_bool().expect("passed"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        results,
+        vec![
+            ("shard-1-of-4".to_owned(), true),
+            ("shard-2-of-4".to_owned(), false),
+            ("shard-3-of-4".to_owned(), true),
+            ("shard-4-of-4".to_owned(), false),
+        ]
+    );
+    let log = std::fs::read_to_string(logs.join("shard-3-of-4/task-0.bin")).expect("log");
+    assert!(log.contains("shard 3 of 4"), "{log}");
+}
+
 #[test]
 fn a_group_changes_coordinator_and_keeps_strangers_out() {
     let relay_node = Node::new();

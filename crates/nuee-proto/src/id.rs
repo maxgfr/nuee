@@ -17,6 +17,8 @@ pub const DOMAIN_RESULT: &[u8] = b"nuee/result/0";
 pub const DOMAIN_PIN: &[u8] = b"nuee/pin/0";
 /// Domain of group roster signatures.
 pub const DOMAIN_ROSTER: &[u8] = b"nuee/roster/0";
+/// Domain of a member's signature over a short-lived key acting for it.
+pub const DOMAIN_DELEGATE: &[u8] = b"nuee/delegate/0";
 
 /// Admission proof label on `nuee/job/0`.
 pub const PROOF_HELLO: &[u8] = b"nuee/hello/0";

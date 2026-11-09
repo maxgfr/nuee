@@ -237,6 +237,92 @@ impl ExecApproval {
     }
 }
 
+/// What `nuee shard` runs: the command's log goes to `$NUEE_OUT`, then a last line with its exit
+/// code, so that a failing test is a result and not a fault.
+const SHARD_SCRIPT: &str = r#"sh -c "$2" >"$1" 2>&1; printf '\nnuee-exit-code %s\n' "$?" >>"$1""#;
+const SHARD_MARK: &str = "nuee-exit-code ";
+
+/// The command line of one shard running `command`.
+pub fn shard_argv(command: &str) -> Vec<String> {
+    ["sh", "-c", SHARD_SCRIPT, "nuee", "$NUEE_OUT", command]
+        .map(str::to_owned)
+        .to_vec()
+}
+
+/// The exit code a shard left on the last line of its log.
+pub fn shard_exit_code(log: &[u8]) -> Option<i32> {
+    let text = String::from_utf8_lossy(log);
+    text.trim_end()
+        .lines()
+        .last()?
+        .strip_prefix(SHARD_MARK)?
+        .parse()
+        .ok()
+}
+
+/// Whether `actual` is `template` with each `{i}` and `{n}` replaced by digits and nothing else.
+fn template_matches(template: &str, actual: &str) -> bool {
+    let (mut t, mut a) = (template, actual);
+    loop {
+        let Some(at) = [t.find("{i}"), t.find("{n}")].into_iter().flatten().min() else {
+            return t == a;
+        };
+        let Some(rest) = a.strip_prefix(&t[..at]) else {
+            return false;
+        };
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        if digits == 0 {
+            return false;
+        }
+        a = &rest[digits..];
+        t = &t[at + 3..];
+    }
+}
+
+/// A standing permission of one machine: this shard command may run at any commit of this
+/// repository. Only offered to the coordinator of a group whose roster this machine verified.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoRule {
+    repo: String,
+    command: String,
+}
+
+impl RepoRule {
+    /// A rule for `command`, where `{i}` and `{n}` stand for numbers.
+    pub fn new(repo: &str, command: &str) -> Result<Self, AllowError> {
+        if !repo_ok(repo) {
+            return Err(AllowError::Repo);
+        }
+        if command.trim().is_empty() {
+            return Err(AllowError::Argv);
+        }
+        Ok(Self {
+            repo: repo.to_owned(),
+            command: command.to_owned(),
+        })
+    }
+
+    /// The repository of this rule.
+    pub fn repo(&self) -> &str {
+        &self.repo
+    }
+
+    /// Whether `spec` is this rule's command wrapped as a shard, with no environment and no GPU.
+    pub fn matches(&self, spec: &ExecSpec) -> bool {
+        let argv: Vec<&str> = spec.argv.iter().map(|a| a.as_str()).collect();
+        let Some((command, wrapper)) = argv.split_last() else {
+            return false;
+        };
+        let expected = shard_argv("");
+        spec.repo.as_str() == self.repo
+            && spec.env.is_empty()
+            && !spec.gpu
+            && argv.len() == expected.len()
+            && wrapper.iter().zip(&expected).all(|(a, b)| a == b)
+            && template_matches(&self.command, command)
+    }
+}
+
 /// `https://host/...`, printable ASCII, nothing a git option parser could pick up.
 fn repo_ok(repo: &str) -> bool {
     let Some(rest) = repo.strip_prefix("https://") else {
@@ -284,6 +370,8 @@ pub struct ExecPolicy {
     pub allow: Vec<AllowEntry>,
     /// Exact commands that may run; a pinned revision alone runs nothing.
     pub approved: Vec<ExecApproval>,
+    /// Shard commands that may run at any commit of a repository.
+    pub repo_rules: Vec<RepoRule>,
     /// Whether tasks may use the network (default false).
     pub network: bool,
     /// Repository cache, task directories and the GPU lock (`<data>/exec`).
@@ -302,6 +390,7 @@ impl ExecPolicy {
         Self {
             allow: Vec::new(),
             approved: Vec::new(),
+            repo_rules: Vec::new(),
             network: false,
             cache_dir,
             max_output: DEFAULT_MAX_OUTPUT,
@@ -437,7 +526,14 @@ impl NativeRunner {
 
     /// `repo@rev` strings to advertise in `Caps::exec_allow`.
     pub fn advertised(&self) -> Vec<String> {
-        self.policy.allow.iter().map(ToString::to_string).collect()
+        let mut out: Vec<String> = self.policy.allow.iter().map(ToString::to_string).collect();
+        for rule in &self.policy.repo_rules {
+            let any = format!("{}@*", rule.repo());
+            if !out.contains(&any) {
+                out.push(any);
+            }
+        }
+        out
     }
 
     /// Whether `spec`'s `repo@rev` is pinned here (it may still need an approval to run).
@@ -446,12 +542,19 @@ impl NativeRunner {
             .allow
             .iter()
             .any(|a| a.repo == spec.repo.as_str() && a.rev == spec.rev.as_str())
+            || self
+                .policy
+                .repo_rules
+                .iter()
+                .any(|r| r.repo() == spec.repo.as_str())
     }
 
     /// Whether `spec` may run here: its `repo@rev` is pinned and the operator approved this
     /// exact command line and environment.
     pub fn allowed(&self, spec: &ExecSpec) -> bool {
-        self.pinned(spec) && self.policy.approved.iter().any(|a| a.matches(spec))
+        self.pinned(spec)
+            && (self.policy.approved.iter().any(|a| a.matches(spec))
+                || self.policy.repo_rules.iter().any(|r| r.matches(spec)))
     }
 
     /// Runs one task: `input` goes to `$NUEE_IN`, the bytes left in `$NUEE_OUT` come back.

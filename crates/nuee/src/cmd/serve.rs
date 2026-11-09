@@ -39,7 +39,7 @@ use nuee_proto::{
     FileLink, Hash, Header, HttpRequest, HttpResponse, JobLink, Link, LocalLimits, MAX_HTTP_MSG,
     Manifest, Msg, Payload, SecretKey, ServiceLink, TaskKind,
 };
-use nuee_proto::{DOMAIN_DELEGATE, SignedRoster, verify_domain};
+use nuee_proto::{DOMAIN_DELEGATE, Roster, SignedRoster, verify_domain};
 use nuee_store::{FilesAcceptor, HubConfig, Offer, Registry, StoreHub};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -510,7 +510,28 @@ struct GroupState {
     allow: Allow,
     /// Short-lived keys acting for a member; forgotten when the roster changes.
     delegated: Allow,
+    /// Members that only submit jobs (CI keys), and the short-lived keys acting for them.
+    limited: Allow,
     handoff: tokio::sync::Notify,
+}
+
+/// The members that only submit jobs.
+fn submitters(roster: &Roster) -> HashSet<EndpointId> {
+    roster
+        .members
+        .iter()
+        .filter(|m| !m.worker)
+        .map(|m| m.id)
+        .collect()
+}
+
+/// What a key that only submits jobs can reach.
+fn submitter_may(method: &str, path: &str) -> bool {
+    let root = path.split(['/', '?']).next().unwrap_or_default();
+    matches!(
+        (method, root),
+        ("POST" | "GET", "jobs") | ("GET", "status" | "roster")
+    )
 }
 
 /// Most short-lived keys remembered at once.
@@ -982,17 +1003,19 @@ impl Anchor {
         let Some((member, sig)) = parsed else {
             return err(400, "malformed delegation");
         };
-        let listed = g
+        let worker = g
             .roster
             .lock()
             .await
             .open(&g.id)
-            .is_ok_and(|r| r.member(&member).is_some());
-        if !listed || !verify_domain(&member, DOMAIN_DELEGATE, peer.as_bytes(), &sig) {
+            .ok()
+            .and_then(|r| r.member(&member).map(|m| m.worker));
+        let Some(worker) =
+            worker.filter(|_| verify_domain(&member, DOMAIN_DELEGATE, peer.as_bytes(), &sig))
+        else {
             return err(403, "this machine is not on the group's roster");
-        }
-        let mut delegated = g
-            .delegated
+        };
+        let mut delegated = if worker { &g.delegated } else { &g.limited }
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if delegated.len() >= MAX_DELEGATED {
@@ -1037,9 +1060,12 @@ impl Anchor {
                 .write()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             allow.clear();
-            allow.extend(new.members.iter().map(|m| m.id));
+            allow.extend(new.members.iter().filter(|m| m.worker).map(|m| m.id));
             allow.insert(self.files_net.id());
         }
+        *g.limited
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = submitters(&new);
         g.delegated
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1161,14 +1187,24 @@ impl AdminHandler {
         let (status, body) = match req {
             Ok(req) => {
                 let path = req.path.as_str().trim_matches('/');
+                let limited = self
+                    .anchor
+                    .group
+                    .as_ref()
+                    .is_some_and(|g| allowed(&g.limited, &peer));
                 let member = match &self.anchor.group {
                     Some(g) => {
-                        path == "roster" || allowed(&g.allow, &peer) || allowed(&g.delegated, &peer)
+                        path == "roster"
+                            || limited
+                            || allowed(&g.allow, &peer)
+                            || allowed(&g.delegated, &peer)
                     }
                     None => true,
                 };
                 let (status, body) = if path == "delegate" && req.method.as_str() == "POST" {
                     self.anchor.delegate(&peer, req.body.as_slice()).await
+                } else if limited && !submitter_may(req.method.as_str(), path) {
+                    err(403, "this key can only submit jobs")
                 } else if member {
                     self.anchor
                         .route(req.method.as_str(), req.path.as_str(), req.body.as_slice())
@@ -1364,7 +1400,14 @@ pub(crate) async fn run_anchor(
     let allow = match &group {
         Some(g) => {
             let roster = g.roster.open(&g.id).map_err(anyhow::Error::new)?;
-            Some(roster.members.iter().map(|m| m.id).collect())
+            Some(
+                roster
+                    .members
+                    .iter()
+                    .filter(|m| m.worker)
+                    .map(|m| m.id)
+                    .collect(),
+            )
         }
         None => allowlist(&args)?,
     };
@@ -1545,6 +1588,11 @@ pub(crate) async fn run_anchor(
         group: match (group, &allow) {
             (Some(g), Some(allow)) => Some(GroupState {
                 id: g.id,
+                limited: Arc::new(RwLock::new(
+                    g.roster
+                        .open(&g.id)
+                        .map_or_else(|_| HashSet::new(), |r| submitters(&r)),
+                )),
                 roster: Mutex::new(g.roster),
                 path: g.roster_path,
                 allow: allow.clone(),

@@ -1,0 +1,54 @@
+name: Nuée
+description: Run a build or a test suite on your team's own machines, inside a sandbox, without a server.
+branding:
+  icon: users
+  color: purple
+inputs:
+  group:
+    description: The group link (`nuee group create`). Store it as a secret.
+    required: true
+  key:
+    description: The key from `nuee group ci-key`, which can only submit jobs. Store it as a secret.
+    required: true
+  command:
+    description: The command, exactly as the machines allow it with --allow-command.
+    required: true
+  shards:
+    description: Cut the command in this many pieces ({i} and {n} in the command). Empty means one build.
+    required: false
+    default: ''
+  keep:
+    description: Paths to bring back from a build, one per line.
+    required: false
+    default: ''
+  out:
+    description: Where the output and the logs go.
+    required: false
+    default: nuee-out
+  timeout:
+    description: Time limit of one piece, in seconds.
+    required: false
+    default: '3600'
+  version:
+    description: The Nuée release to use, such as v0.5.0. Empty means the release this action is pinned to, or the latest.
+    required: false
+    default: ''
+outputs:
+  out:
+    description: Where the output and the logs are.
+    value: ${{ steps.run.outputs.out }}
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        NUEE_GROUP: ${{ inputs.group }}
+        NUEE_KEY: ${{ inputs.key }}
+        NUEE_COMMAND: ${{ inputs.command }}
+        NUEE_SHARDS: ${{ inputs.shards }}
+        NUEE_KEEP: ${{ inputs.keep }}
+        NUEE_ACTION_OUT: ${{ inputs.out }}
+        NUEE_TIMEOUT: ${{ inputs.timeout }}
+        NUEE_VERSION: ${{ inputs.version || github.action_ref }}
+      run: '"$GITHUB_ACTION_PATH/scripts/action.sh"'

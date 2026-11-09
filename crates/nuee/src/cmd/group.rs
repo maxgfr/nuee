@@ -62,6 +62,14 @@ enum Verb {
         /// The machine's id
         id: String,
     },
+    /// Create a key that can only submit jobs, for a CI system (on the machine that created it)
+    CiKey {
+        /// The group link, or `-` to read it from stdin
+        link: String,
+        /// Name shown to the group
+        #[arg(long, default_value = "ci")]
+        name: String,
+    },
     /// Show the group's machines
     Status {
         /// The group link, or `-` to read it from stdin
@@ -94,7 +102,13 @@ struct UpArgs {
     /// Let allowed native commands use the network
     #[arg(long)]
     exec_network: bool,
-    /// Accept `nuee shard` work at any commit of this repository, inside the sandbox
+    /// Show this directory to native commands, read-only (repeat); home directories are hidden
+    #[arg(long, value_name = "DIR")]
+    exec_read: Vec<PathBuf>,
+    /// Token that reads a private --allow-repo; used to fetch it, never shown to the command
+    #[arg(long, value_name = "FILE", requires = "allow_repo")]
+    git_token_file: Option<PathBuf>,
+    /// Accept `nuee shard` and `nuee build` work at any commit of this repository, inside the sandbox
     #[arg(long, value_name = "URL", requires = "allow_command")]
     allow_repo: Option<String>,
     /// The only shard command accepted from --allow-repo; {i} and {n} stand for numbers (repeat)
@@ -191,6 +205,7 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             keeper,
         } => invite(&link, &id, &name, keeper, ctx).await,
         Verb::Remove { link, id } => remove(&link, &id, ctx).await,
+        Verb::CiKey { link, name } => ci_key(&link, &name, ctx).await,
         Verb::Status { link } => status(&link, ctx).await,
         Verb::Handoff { link, id } => handoff(&link, &id, ctx).await,
         Verb::Up(a) => up(a, ctx).await,
@@ -537,6 +552,37 @@ async fn invite(
     Ok(ExitCode::SUCCESS)
 }
 
+/// Adds a member that does no work and can only submit jobs, and prints its key once.
+async fn ci_key(link_text: &str, name: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
+    let link = parse_link(link_text)?;
+    let key = config::fresh_key()?;
+    let id = key.public();
+    let name = name_of(name)?;
+    let roster = change_roster(&link, ctx, |members| {
+        members.push(Member {
+            id,
+            name,
+            worker: false,
+            store: false,
+            keeper_rank: None,
+        });
+        Ok(())
+    })
+    .await?;
+    let secret = serve::hex(&key.to_bytes());
+    ctx.ui.emit(
+        "ci_key",
+        json!({ "id": id.to_string(), "key": secret, "revision": roster.revision }),
+    );
+    if !ctx.ui.is_json() {
+        ctx.ui.say(&secret);
+        ctx.ui.note(&format!(
+            "this key is shown once: store it as the CI secret NUEE_KEY. It can only submit jobs; `nuee group remove <link> {id}` revokes it"
+        ));
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 async fn remove(link_text: &str, id: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
     let link = parse_link(link_text)?;
     let id = parse_id(id)?;
@@ -596,6 +642,7 @@ fn describe(m: &Member) -> Value {
         "id": m.id.to_string(),
         "name": m.name.as_str(),
         "keeper_rank": m.keeper_rank,
+        "worker": m.worker,
     })
 }
 
@@ -626,7 +673,8 @@ async fn status(link_text: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             let role = match m.keeper_rank {
                 Some(0) => "coordinates",
                 Some(_) => "keeper",
-                None => "member",
+                None if m.worker => "member",
+                None => "submits",
             };
             ctx.ui.say(&format!("{role:<12} {} {}", m.id, m.name));
         }
@@ -688,6 +736,8 @@ fn join_args(up: &UpArgs, link: String) -> super::join::Args {
         allow_exec: up.allow_exec.clone(),
         exec_approvals: up.exec_approvals.clone(),
         exec_network: up.exec_network,
+        exec_read: up.exec_read.clone(),
+        git_token_file: up.git_token_file.clone(),
         exec_mirror: up.exec_mirror.clone(),
         store: None,
         llm: None,
@@ -756,13 +806,19 @@ async fn up(args: UpArgs, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             }
             continue;
         };
-        if roster.member(&me).is_none() {
-            return Err(fail(
-                exit::REFUSED,
-                format!(
-                    "this machine is not on the group's roster; ask whoever created the group to run `nuee group invite <link> {me} --name <name>`"
-                ),
-            ));
+        match roster.member(&me) {
+            None => {
+                return Err(fail(
+                    exit::REFUSED,
+                    format!(
+                        "this machine is not on the group's roster; ask whoever created the group to run `nuee group invite <link> {me} --name <name>`"
+                    ),
+                ));
+            }
+            Some(m) if !m.worker => {
+                return Err(fail(exit::REFUSED, "this key can only submit jobs"));
+            }
+            Some(_) => {}
         }
         let leader = roster.keepers()[0].id;
         if leader == me {

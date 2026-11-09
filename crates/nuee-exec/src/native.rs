@@ -249,6 +249,42 @@ pub fn shard_argv(command: &str) -> Vec<String> {
         .to_vec()
 }
 
+/// What `nuee build` runs: like a shard, and the paths it keeps come back with the log, in a tar.
+/// A path the build did not produce is left out; the log says why.
+const BUILD_SCRIPT: &str = r#"out=$1; command=$2; shift 2
+sh -c "$command" >"$out.log" 2>&1
+code=$?
+printf '\nnuee-exit-code %s\n' "$code" >>"$out.log"
+n=$#
+while [ "$n" -gt 0 ]; do
+  path=$1; shift
+  if [ -e "$path" ]; then set -- "$@" "$path"; fi
+  n=$((n-1))
+done
+COPYFILE_DISABLE=1 tar -cf "$out.tmp" -C "${out%/*}" out.log -C "$PWD" "$@" && mv "$out.tmp" "$out""#;
+
+/// Name of the build log in what `nuee build` brings back.
+pub const BUILD_LOG: &str = "out.log";
+/// Most paths one build can keep.
+pub const MAX_KEPT: usize = 8;
+
+/// Whether `nuee build` may bring this path back: inside the checkout, and not the whole of it.
+pub fn kept_path_ok(path: &str) -> bool {
+    path.len() <= 256
+        && !path.starts_with('-')
+        && !path.bytes().any(|b| b.is_ascii_control())
+        && path.split('/').all(|part| !matches!(part, "" | "." | ".."))
+}
+
+/// The command line of one build running `command` and keeping `kept`.
+pub fn build_argv(command: &str, kept: &[String]) -> Vec<String> {
+    let mut argv = ["sh", "-c", BUILD_SCRIPT, "nuee", "$NUEE_OUT", command]
+        .map(str::to_owned)
+        .to_vec();
+    argv.extend_from_slice(kept);
+    argv
+}
+
 /// The exit code a shard left on the last line of its log.
 pub fn shard_exit_code(log: &[u8]) -> Option<i32> {
     let text = String::from_utf8_lossy(log);
@@ -307,18 +343,23 @@ impl RepoRule {
         &self.repo
     }
 
-    /// Whether `spec` is this rule's command wrapped as a shard, with no environment and no GPU.
+    /// Whether `spec` is this rule's command wrapped as a shard or a build, with no environment
+    /// and no GPU.
     pub fn matches(&self, spec: &ExecSpec) -> bool {
         let argv: Vec<&str> = spec.argv.iter().map(|a| a.as_str()).collect();
-        let Some((command, wrapper)) = argv.split_last() else {
+        let [sh, dash_c, script, name, out, command, kept @ ..] = argv.as_slice() else {
             return false;
         };
-        let expected = shard_argv("");
+        let wrapper = [*sh, *dash_c, *name, *out] == ["sh", "-c", "nuee", "$NUEE_OUT"]
+            && match *script {
+                SHARD_SCRIPT => kept.is_empty(),
+                BUILD_SCRIPT => kept.len() <= MAX_KEPT && kept.iter().all(|p| kept_path_ok(p)),
+                _ => false,
+            };
         spec.repo.as_str() == self.repo
             && spec.env.is_empty()
             && !spec.gpu
-            && argv.len() == expected.len()
-            && wrapper.iter().zip(&expected).all(|(a, b)| a == b)
+            && wrapper
             && template_matches(&self.command, command)
     }
 }
@@ -374,6 +415,13 @@ pub struct ExecPolicy {
     pub repo_rules: Vec<RepoRule>,
     /// Whether tasks may use the network (default false).
     pub network: bool,
+    /// HTTP header sent when fetching a repository, for private ones. Used by git before the task
+    /// starts, never given to the task.
+    pub git_header: Option<String>,
+    /// Directories the operator shows to tasks, read-only, in spite of the hidden areas.
+    pub read: Vec<PathBuf>,
+    /// This machine's keys and data, hidden from tasks wherever they are.
+    pub hide: Vec<PathBuf>,
     /// Repository cache, task directories and the GPU lock (`<data>/exec`).
     pub cache_dir: PathBuf,
     /// Largest output accepted.
@@ -392,6 +440,9 @@ impl ExecPolicy {
             approved: Vec::new(),
             repo_rules: Vec::new(),
             network: false,
+            git_header: None,
+            read: Vec::new(),
+            hide: Vec::new(),
             cache_dir,
             max_output: DEFAULT_MAX_OUTPUT,
             kill_grace: Duration::from_secs(5),
@@ -661,6 +712,7 @@ impl NativeRunner {
                 .map_err(|e| err(FailKind::Io, format!("checkout thread: {e}")))?
         };
         let repo_dir = checkout?;
+        let view = self.view(spec).map_err(|e| io("task home", e))?;
 
         let limit = until.saturating_duration_since(Instant::now());
         let res = self
@@ -672,6 +724,7 @@ impl NativeRunner {
                     tmp: &tmp,
                     input: &in_path,
                     output: &out_path,
+                    view: &view,
                 },
                 train.as_ref(),
                 limit,
@@ -680,6 +733,47 @@ impl NativeRunner {
         let res = res.and_then(|()| self.read_output(&out_path));
         remove_worktree(&repo_dir, &src);
         res
+    }
+
+    /// What this task sees of the machine. A GPU job needs the real home for its drivers and
+    /// model caches, so only the secrets in it are taken away; every other task gets a home of
+    /// its own, one per repository so that package caches survive from one run to the next.
+    fn view(&self, spec: &ExecSpec) -> std::io::Result<View> {
+        let mut hide: Vec<PathBuf> = self.policy.hide.clone();
+        hide.push(self.policy.cache_dir.clone());
+        let real_home = home();
+        // The checkout's `.git` points there, for `git describe` and the like in a build.
+        let repo = repo_cache(&self.policy, spec.repo.as_str()).canonicalize()?;
+        if spec.gpu {
+            hide.extend(HOME_SECRETS.iter().map(|p| real_home.join(p)));
+            hide.push(PathBuf::from("/run/docker.sock"));
+            hide.push(PathBuf::from("/var/run/docker.sock"));
+            return Ok(View {
+                home: real_home,
+                write: cache_dirs().into_iter().filter(|d| d.is_dir()).collect(),
+                read: self.policy.read.iter().cloned().chain([repo]).collect(),
+                hide,
+                env: Vec::new(),
+            });
+        }
+        hide.extend(hidden_areas().iter().map(PathBuf::from));
+        let (mut read, env) = toolchains(&real_home, std::env::var_os("PATH").as_deref());
+        read.extend(self.policy.read.iter().cloned());
+        read.push(repo);
+        let dir = self
+            .policy
+            .cache_dir
+            .join("homes")
+            .join(repo_dir_name(spec.repo.as_str()));
+        std::fs::create_dir_all(&dir)?;
+        let dir = dir.canonicalize()?;
+        Ok(View {
+            write: vec![dir.clone()],
+            home: dir,
+            read,
+            hide,
+            env,
+        })
     }
 
     async fn gpu_lock(&self) -> Result<File, ExecError> {
@@ -740,6 +834,7 @@ impl NativeRunner {
             tmp,
             input: in_path,
             output: out_path,
+            view,
         } = *paths;
         let in_s = in_path.to_string_lossy().into_owned();
         let out_s = out_path.to_string_lossy().into_owned();
@@ -749,10 +844,17 @@ impl NativeRunner {
         let mut cmd = match self.sandbox {
             Sandbox::SandboxExec => {
                 let mut c = Command::new(SANDBOX_EXEC);
-                c.arg("-p").arg(macos_profile(self.policy.network));
+                c.arg("-p").arg(macos_profile(self.policy.network, view));
                 c.arg("-D").arg(format!("TASK_DIR={}", root.display()));
-                for (i, dir) in cache_dirs().iter().enumerate() {
-                    c.arg("-D").arg(format!("CACHE_{i}={}", dir.display()));
+                let lists = [
+                    ("WRITE", &view.write),
+                    ("READ", &view.read),
+                    ("HIDE", &view.hide),
+                ];
+                for (name, list) in lists {
+                    for (i, dir) in list.iter().enumerate() {
+                        c.arg("-D").arg(format!("{name}_{i}={}", dir.display()));
+                    }
                 }
                 c.args(&argv);
                 c
@@ -760,11 +862,26 @@ impl NativeRunner {
             Sandbox::Bwrap => {
                 let mut c = Command::new("bwrap");
                 c.args(["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]);
-                c.arg("--bind").arg(root).arg(root);
-                for dir in cache_dirs() {
-                    if dir.is_dir() {
-                        c.arg("--bind").arg(&dir).arg(&dir);
+                for path in &view.hide {
+                    if path.is_dir() {
+                        c.arg("--tmpfs").arg(path);
+                    } else if path.exists() {
+                        c.args(["--ro-bind", "/dev/null"])
+                            .arg(path)
+                            .arg("/dev/null");
                     }
+                }
+                if self.policy.network
+                    && let Ok(resolver) = Path::new("/etc/resolv.conf").canonicalize()
+                {
+                    c.arg("--ro-bind").arg(&resolver).arg(&resolver);
+                }
+                for dir in &view.read {
+                    c.arg("--ro-bind").arg(dir).arg(dir);
+                }
+                c.arg("--bind").arg(root).arg(root);
+                for dir in &view.write {
+                    c.arg("--bind").arg(dir).arg(dir);
                 }
                 if !self.policy.network {
                     c.arg("--unshare-net");
@@ -772,6 +889,9 @@ impl NativeRunner {
                 // --new-session puts the task in its own session, out of reach of the group
                 // kill below; the PID namespace ends every process of the task with bwrap.
                 c.args([
+                    "--unshare-ipc",
+                    "--unshare-uts",
+                    "--unshare-cgroup-try",
                     "--unshare-pid",
                     "--die-with-parent",
                     "--new-session",
@@ -791,7 +911,8 @@ impl NativeRunner {
                 "PATH",
                 std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()),
             )
-            .env("HOME", home())
+            .env("HOME", &view.home)
+            .env("CFFIXED_USER_HOME", &view.home)
             .env(
                 "LANG",
                 std::env::var_os("LANG").unwrap_or_else(|| "C.UTF-8".into()),
@@ -800,6 +921,9 @@ impl NativeRunner {
             .env("TMPDIR", tmp)
             .env("NUEE_IN", in_path)
             .env("NUEE_OUT", out_path);
+        for (key, value) in &view.env {
+            cmd.env(key, value);
+        }
         for v in spec.env.iter() {
             cmd.env(v.key.as_str(), v.value.as_str());
         }
@@ -880,6 +1004,22 @@ struct TaskPaths<'a> {
     tmp: &'a Path,
     input: &'a Path,
     output: &'a Path,
+    view: &'a View,
+}
+
+/// What a task sees of the machine, on top of the system directories.
+#[derive(Debug)]
+struct View {
+    /// Its `$HOME`.
+    home: PathBuf,
+    /// Writable besides the task directory.
+    write: Vec<PathBuf>,
+    /// Shown read-only inside the hidden areas.
+    read: Vec<PathBuf>,
+    /// Taken away.
+    hide: Vec<PathBuf>,
+    /// Where the toolchains shown in `read` keep their files.
+    env: Vec<(&'static str, PathBuf)>,
 }
 
 /// Kills the whole process group when the task ends, is cancelled or its future is dropped.
@@ -958,18 +1098,146 @@ fn cache_dirs() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Allows everything except writes outside the task and cache directories and, unless the
-/// policy says otherwise, any IP networking.
-fn macos_profile(network: bool) -> String {
+/// Where a machine keeps personal data and other programs' sockets. A task sees none of it, apart
+/// from what [`View::read`] shows again.
+fn hidden_areas() -> &'static [&'static str] {
+    if cfg!(target_os = "macos") {
+        &["/Users", "/Volumes", "/private/tmp", "/private/var/folders"]
+    } else {
+        &[
+            "/home", "/root", "/tmp", "/var/tmp", "/run", "/mnt", "/media",
+        ]
+    }
+}
+
+/// Inside the real home that a GPU job keeps: what must never reach a task.
+const HOME_SECRETS: &[&str] = &[
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".azure",
+    ".kube",
+    ".docker",
+    ".config",
+    ".netrc",
+    ".npmrc",
+    ".pypirc",
+    ".gitconfig",
+    ".git-credentials",
+    ".cargo/credentials",
+    ".cargo/credentials.toml",
+    ".local/share",
+    "Library/Keychains",
+    "Library/Cookies",
+    "Library/Application Support",
+    "Library/Mail",
+    "Library/Messages",
+    "Library/Safari",
+    "Documents",
+    "Desktop",
+    "Downloads",
+];
+
+/// Toolchains that are only a directory of proxies on `PATH`: seeing that directory, a task also
+/// needs the one the proxies read, named by this variable since `$HOME` is not the real one.
+const PROXY_TOOLCHAINS: &[(&str, &str, &str)] = &[
+    (".cargo/bin", ".rustup", "RUSTUP_HOME"),
+    (".pyenv/shims", ".pyenv", "PYENV_ROOT"),
+    (".asdf/shims", ".asdf", "ASDF_DATA_DIR"),
+    (".volta/bin", ".volta", "VOLTA_HOME"),
+];
+
+/// The directories of `path` that lie in a hidden area, so that tools installed per user still
+/// run. `<root>/bin` brings its `<root>` (`~/.nvm/versions/node/v24`), except where that root is
+/// the home itself or a directory that holds other things than this tool.
+fn toolchains(
+    home: &Path,
+    path: Option<&std::ffi::OsStr>,
+) -> (Vec<PathBuf>, Vec<(&'static str, PathBuf)>) {
+    let home = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
+    let hidden = |p: &Path| hidden_areas().iter().any(|a| p.starts_with(a));
+    let (mut read, mut env) = (Vec::new(), Vec::new());
+    for entry in path.map(std::env::split_paths).into_iter().flatten() {
+        let Ok(real) = entry.canonicalize() else {
+            continue;
+        };
+        if !hidden(&real) || home.starts_with(&real) {
+            continue;
+        }
+        for (marker, companion, variable) in PROXY_TOOLCHAINS {
+            let dir = home.join(companion);
+            if real == home.join(marker) && dir.is_dir() {
+                read.push(dir.clone());
+                env.push((*variable, dir));
+            }
+        }
+        let shared = |root: &Path| {
+            root == home
+                || root
+                    .file_name()
+                    .is_some_and(|n| [".local", ".cargo"].contains(&n.to_str().unwrap_or_default()))
+        };
+        let root = real
+            .parent()
+            .filter(|root| real.ends_with("bin") && !shared(root));
+        read.push(root.map_or_else(|| real.clone(), Path::to_path_buf));
+    }
+    read.sort();
+    read.dedup();
+    (read, env)
+}
+
+/// A directory name for a repository: readable, and unique through a hash of the whole URL.
+fn repo_dir_name(repo: &str) -> String {
+    let mut name: String = repo
+        .trim_start_matches("https://")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .take(64)
+        .collect();
+    name.push('-');
+    name.push_str(&blake3::hash(repo.as_bytes()).to_hex()[..16]);
+    name
+}
+
+/// `(subpath ...)` for each of the parameters `<name>_<i>`.
+fn subpaths(name: &str, count: usize) -> String {
+    (0..count)
+        .map(|i| format!(" (subpath (param \"{name}_{i}\"))"))
+        .collect()
+}
+
+/// macOS rules. Everything is allowed but: writes outside the task's directories; reading the
+/// hidden areas (names and sizes stay visible, as resolving a path needs them); IP networking
+/// unless the policy allows it; and every way out of the sandbox through another program: other
+/// programs' sockets (Docker, ssh-agent), Launch Services, Apple events, launchd, the keychain,
+/// the clipboard, and signals to processes outside the task.
+fn macos_profile(network: bool, view: &View) -> String {
     let mut p = String::from("(version 1)\n(allow default)\n");
     if !network {
         p.push_str("(deny network-outbound (remote ip))\n(deny network-inbound (local ip))\n(deny network-bind (local ip))\n");
     }
-    p.push_str(
-        "(deny file-write*)\n(allow file-write*\n  (subpath (param \"TASK_DIR\"))\n  \
-         (subpath (param \"CACHE_0\"))\n  (subpath (param \"CACHE_1\"))\n  \
+    let write = subpaths("WRITE", view.write.len());
+    p.push_str(&format!(
+        "(deny file-write*)\n(allow file-write*\n  (subpath (param \"TASK_DIR\")){write}\n  \
          (literal \"/dev/null\")\n  (literal \"/dev/zero\")\n  (literal \"/dev/dtracehelper\")\n  \
          (regex #\"^/dev/fd/\"))\n",
+    ));
+    p.push_str(&format!(
+        "(deny file-read-data{})\n(allow file-read-data (subpath (param \"TASK_DIR\")){write}{})\n",
+        subpaths("HIDE", view.hide.len()),
+        subpaths("READ", view.read.len()),
+    ));
+    p.push_str(
+        "(deny lsopen)\n(deny appleevent-send)\n(deny signal)\n(allow signal (target same-sandbox))\n\
+         (deny mach-lookup (global-name \"com.apple.SecurityServer\") \
+         (global-name \"com.apple.securityd.xpc\") (global-name \"com.apple.pasteboard.1\"))\n\
+         (deny process-exec (literal \"/bin/launchctl\") (literal \"/usr/bin/open\") \
+         (literal \"/usr/bin/osascript\"))\n\
+         (deny network-outbound (remote unix-socket))\n\
+         (allow network-outbound (remote unix-socket (path-regex (string-append \"^\" \
+         (regex-quote (param \"TASK_DIR\"))))))\n\
+         (allow network-outbound (remote unix-socket (path-literal \"/private/var/run/mDNSResponder\")))\n",
     );
     p
 }
@@ -1100,6 +1368,14 @@ fn lock_until(path: &Path, until: Instant) -> Result<File, ExecError> {
 
 /// Fetches `rev` into the cached repository and checks it out at `dest`, all before `until`;
 /// returns the cache repo.
+/// Where this repository's objects are kept on this machine.
+fn repo_cache(policy: &ExecPolicy, repo: &str) -> PathBuf {
+    policy
+        .cache_dir
+        .join("repos")
+        .join(blake3::hash(repo.as_bytes()).to_hex().as_str())
+}
+
 fn checkout(
     policy: &ExecPolicy,
     spec: &ExecSpec,
@@ -1108,9 +1384,11 @@ fn checkout(
 ) -> Result<PathBuf, ExecError> {
     let repo = spec.repo.as_str();
     let rev = spec.rev.as_str();
-    let repos = policy.cache_dir.join("repos");
-    std::fs::create_dir_all(&repos).map_err(|e| err(FailKind::Io, format!("repo cache: {e}")))?;
-    let dir = repos.join(blake3::hash(repo.as_bytes()).to_hex().as_str());
+    let dir = repo_cache(policy, repo);
+    if let Some(repos) = dir.parent() {
+        std::fs::create_dir_all(repos)
+            .map_err(|e| err(FailKind::Io, format!("repo cache: {e}")))?;
+    }
     // One git writer per repository at a time; the lock is released on every return.
     let lock = lock_until(&dir.with_extension("lock"), until)?;
     let src = &policy.repo_source;
@@ -1157,6 +1435,12 @@ fn checkout(
             ])
             .arg(&remote)
             .arg(rev);
+        if let (RepoSource::Https, Some(header)) = (src, &policy.git_header) {
+            fetch
+                .env("GIT_CONFIG_COUNT", "1")
+                .env("GIT_CONFIG_KEY_0", format!("http.{repo}.extraheader"))
+                .env("GIT_CONFIG_VALUE_0", header);
+        }
         if let Err(e) = run_git_until(fetch, until) {
             let e = match e {
                 GitError::Timeout => {

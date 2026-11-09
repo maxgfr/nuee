@@ -80,6 +80,26 @@ fn rules_refuse_bad_input() {
 }
 
 #[test]
+fn builds_keep_only_paths_inside_the_checkout() {
+    let rule = RepoRule::new(REPO, "npm run build").expect("rule");
+    let with = |kept: &[&str]| {
+        let kept: Vec<String> = kept.iter().map(|k| (*k).to_owned()).collect();
+        spec(REPO, nuee_exec::build_argv("npm run build", &kept))
+    };
+    assert!(rule.matches(&with(&[])));
+    assert!(rule.matches(&with(&["dist", "out/assets"])));
+    for bad in ["/etc", "../x", "a/../b", "-rf", ".", "a//b", ""] {
+        assert!(!rule.matches(&with(&[bad])), "{bad:?}");
+    }
+    let too_many: Vec<String> = (0..=nuee_exec::MAX_KEPT).map(|i| format!("d{i}")).collect();
+    assert!(!rule.matches(&spec(
+        REPO,
+        nuee_exec::build_argv("npm run build", &too_many)
+    )));
+    assert!(!rule.matches(&spec(REPO, nuee_exec::build_argv("npm run evil", &[]))));
+}
+
+#[test]
 fn the_exit_code_comes_from_the_last_line_only() {
     assert_eq!(shard_exit_code(b"ok\n\nnuee-exit-code 0\n"), Some(0));
     assert_eq!(shard_exit_code(b"boom\n\nnuee-exit-code 17\n"), Some(17));

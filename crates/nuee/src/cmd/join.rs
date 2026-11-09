@@ -40,6 +40,12 @@ pub struct Args {
     /// Let allowed native commands use the network
     #[arg(long)]
     pub exec_network: bool,
+    /// Show this directory to native commands, read-only (repeat); home directories are hidden
+    #[arg(long, value_name = "DIR")]
+    pub exec_read: Vec<std::path::PathBuf>,
+    /// Token that reads a private repository; used to fetch it, never shown to the command
+    #[arg(skip)]
+    pub git_token_file: Option<std::path::PathBuf>,
     /// Fetch the allowed repository URL from a local clone instead (offline or air-gapped
     /// machines; every allowed entry must name URL)
     #[arg(long, value_name = "URL=PATH")]
@@ -123,6 +129,18 @@ fn pinned(args: &Args) -> anyhow::Result<Vec<AllowEntry>> {
     Ok(out)
 }
 
+/// The header that makes git authenticate with the token in `path`.
+fn git_header(path: &std::path::Path) -> anyhow::Result<String> {
+    let token = std::fs::read_to_string(path).map_err(|e| {
+        fail(
+            exit::USAGE,
+            format!("--git-token-file {}: {e}", path.display()),
+        )
+    })?;
+    let basic = data_encoding::BASE64.encode(format!("x-access-token:{}", token.trim()).as_bytes());
+    Ok(format!("Authorization: Basic {basic}"))
+}
+
 /// The native runner when `--allow-exec` or `--exec-approvals` was given; exec stays off
 /// otherwise. `session` holds the commands approved at the prompt.
 pub(crate) fn native_runner(
@@ -153,6 +171,19 @@ pub(crate) fn native_runner(
         return Ok(None);
     }
     let mut policy = ExecPolicy::new(ctx.data_dir()?.join("exec"));
+    policy.hide = vec![
+        ctx.data_dir()?,
+        crate::config::config_dir(ctx.global.config_dir.as_deref())?,
+    ];
+    policy.git_header = args.git_token_file.as_deref().map(git_header).transpose()?;
+    policy.read = args
+        .exec_read
+        .iter()
+        .map(|dir| {
+            dir.canonicalize()
+                .map_err(|e| fail(exit::USAGE, format!("--exec-read {}: {e}", dir.display())))
+        })
+        .collect::<anyhow::Result<_>>()?;
     for parsed in pinned(args)? {
         if !policy.allow.contains(&parsed) {
             policy.allow.push(parsed);

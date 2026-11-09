@@ -35,6 +35,9 @@ pub struct Args {
     /// Time limit of one shard, in seconds
     #[arg(long, value_name = "S", default_value_t = 3600)]
     pub timeout: u32,
+    /// Run again even if this commit and command already have results (a flaky failure)
+    #[arg(long)]
+    pub fresh: bool,
     /// Where to write each shard's log (default ./nuee-out/shard-<commit>)
     #[arg(long, value_name = "DIR")]
     pub out: Option<PathBuf>,
@@ -75,17 +78,17 @@ pub(crate) fn https_remote(url: &str) -> Option<String> {
 
 /// What to run: the given repository and commit, or this checkout's, which others can only
 /// fetch once it is pushed.
-fn target(args: &Args) -> anyhow::Result<(String, String)> {
-    let repo = match &args.repo {
-        Some(r) => r.clone(),
+pub(crate) fn target(repo: Option<&str>, rev: Option<&str>) -> anyhow::Result<(String, String)> {
+    let repo = match repo {
+        Some(r) => r.to_owned(),
         None => {
             let origin = git(&["remote", "get-url", "origin"])?;
             https_remote(&origin)
                 .ok_or_else(|| usage(format!("cannot use the remote {origin}; pass --repo")))?
         }
     };
-    let rev = match &args.rev {
-        Some(r) => r.clone(),
+    let rev = match rev {
+        Some(r) => r.to_owned(),
         None => {
             let head = git(&["rev-parse", "HEAD"])?;
             if git(&["branch", "-r", "--contains", &head])?.is_empty() {
@@ -105,8 +108,24 @@ fn fill(command: &str, i: u16, n: u16) -> String {
         .replace("{n}", &n.to_string())
 }
 
-fn manifest(args: &Args, repo: &str, rev: &str, command: &str, i: u16) -> anyhow::Result<Manifest> {
-    let argv = shard_argv(&fill(command, i, args.shards))
+/// A suffix that gives a job a new identity, so that `--fresh` does not find the old results.
+pub(crate) fn fresh_suffix(fresh: bool) -> String {
+    if !fresh {
+        return String::new();
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+    format!("-{}", now.map_or(0, |d| d.as_millis()))
+}
+
+/// One native job with a single task, run at `rev` of `repo`.
+pub(crate) fn exec_manifest(
+    name: String,
+    repo: &str,
+    rev: &str,
+    argv: Vec<String>,
+    timeout: u32,
+) -> anyhow::Result<Manifest> {
+    let argv = argv
         .into_iter()
         .map(|a| BoundedString::try_from(a).map_err(|_| usage("the command is longer than 1 KiB")))
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -115,14 +134,13 @@ fn manifest(args: &Args, repo: &str, rev: &str, command: &str, i: u16) -> anyhow
         rev: BoundedString::try_from(rev).map_err(|_| usage("--rev: expected 40 hex digits"))?,
         argv: BoundedVec::try_from(argv).map_err(|_| usage("too many arguments"))?,
         env: BoundedVec::new(),
-        timeout_s: args.timeout,
+        timeout_s: timeout,
         gpu: false,
     };
     let manifest = Manifest {
         version: PROTO_VERSION,
         job: 0,
-        name: BoundedString::try_from(format!("shard-{i}-of-{}", args.shards))
-            .map_err(|_| usage("name too long"))?,
+        name: BoundedString::try_from(name).map_err(|_| usage("name too long"))?,
         kind: TaskKind::Exec,
         module: None,
         module_size: 0,
@@ -136,8 +154,7 @@ fn manifest(args: &Args, repo: &str, rev: &str, command: &str, i: u16) -> anyhow
             canary_permille: 0,
         },
         compare: Comparator::None,
-        deadline_ms: args
-            .timeout
+        deadline_ms: timeout
             .checked_mul(1000)
             .ok_or_else(|| usage("--timeout is too long"))?,
         exec: Some(exec),
@@ -166,9 +183,18 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             "the command has no {i}: every shard would run the same thing",
         ));
     }
-    let (repo, rev) = target(&args)?;
+    let (repo, rev) = target(args.repo.as_deref(), args.rev.as_deref())?;
+    let suffix = fresh_suffix(args.fresh);
     let manifests = (1..=args.shards)
-        .map(|i| manifest(&args, &repo, &rev, &command, i))
+        .map(|i| {
+            exec_manifest(
+                format!("shard-{i}-of-{}{suffix}", args.shards),
+                &repo,
+                &rev,
+                shard_argv(&fill(&command, i, args.shards)),
+                args.timeout,
+            )
+        })
         .collect::<anyhow::Result<Vec<_>>>()?;
     let out = args.out.clone().unwrap_or_else(|| {
         Path::new("nuee-out").join(format!("shard-{}", rev.get(..12).unwrap_or(&rev)))

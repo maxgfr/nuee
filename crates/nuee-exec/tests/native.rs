@@ -289,6 +289,48 @@ async fn output_cap_and_exit_codes() {
     assert_eq!(e.kind, FailKind::Invalid);
 }
 
+/// What a dependency's install script would go for.
+#[tokio::test]
+async fn tasks_see_neither_the_home_nor_the_machine_keys() {
+    let f = fixture();
+    let home = std::env::var("HOME").expect("HOME");
+    let secret = Path::new(&home).join(".nuee-test-secret");
+    std::fs::write(&secret, "hunter2").expect("write");
+    let keys = tempfile::tempdir().expect("keys");
+    std::fs::write(keys.path().join("key"), "machine-key").expect("write");
+    let keys_path = keys.path().canonicalize().expect("canonical");
+    let script = format!(
+        "cat '{}' '{}/key' > \"$NUEE_OUT\" 2>&1 || true; \
+         echo \"home=$HOME\" >> \"$NUEE_OUT\"; touch \"$HOME/kept\"; ls \"$HOME\" >> \"$NUEE_OUT\"",
+        secret.display(),
+        keys_path.display()
+    );
+    let task = f.spec(&["sh", "-c", &script]);
+    let mut policy = f.policy_for(&[&task]);
+    policy.hide = vec![keys_path];
+    let runner = NativeRunner::new(policy);
+    let out = runner.run(&task, b"", DEADLINE).await;
+    std::fs::remove_file(&secret).expect("remove");
+    if runner.sandbox() == Sandbox::None {
+        return;
+    }
+    let out = String::from_utf8(out.expect("task")).expect("utf8");
+    assert!(!out.contains("hunter2"), "{out}");
+    assert!(!out.contains("machine-key"), "{out}");
+    assert!(!out.contains(&format!("home={home}\n")), "{out}");
+    assert!(
+        out.contains("kept"),
+        "the task cannot use its own home: {out}"
+    );
+
+    // The home belongs to the repository: a later run finds what the first one left.
+    let again = f.spec(&["sh", "-c", "ls \"$HOME\" > \"$NUEE_OUT\""]);
+    let mut policy = f.policy_for(&[&again]);
+    policy.network = false;
+    let out = NativeRunner::new(policy).run(&again, b"", DEADLINE).await;
+    assert_eq!(out.expect("second task"), b"kept\n");
+}
+
 #[tokio::test]
 async fn sandbox_confines_writes_and_network() {
     let f = fixture();
@@ -305,11 +347,8 @@ async fn sandbox_confines_writes_and_network() {
         &["python3", "-c", connect],
         &[("NUEE_PORT", &port)],
     );
-    let write = f.spec(&[
-        "sh",
-        "-c",
-        "set -e; echo x > \"$HOME/should-not-exist\"; echo ok > \"$NUEE_OUT\"",
-    ]);
+    let script = format!("set -e; echo x > '{home}/should-not-exist'; echo ok > \"$NUEE_OUT\"");
+    let write = f.spec(&["sh", "-c", &script]);
     let exit1 = f.spec(&["sh", "-c", "exit 1"]);
     let r = f.runner_for(&[&net, &write, &exit1]);
 

@@ -6,7 +6,7 @@ pub mod native;
 pub mod wasm;
 
 pub use native::{
-    AllowEntry, ExecApproval, ExecPolicy, NativeRunner, RepoRule, RepoSource, Sandbox, TrainArgs,
-    shard_argv, shard_exit_code,
+    AllowEntry, BUILD_LOG, ExecApproval, ExecPolicy, MAX_KEPT, NativeRunner, RepoRule, RepoSource,
+    Sandbox, TrainArgs, build_argv, kept_path_ok, shard_argv, shard_exit_code,
 };
 pub use wasm::{ExecError, RunLimits, RunnerConfig, WasmRunner};

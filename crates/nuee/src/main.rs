@@ -1,6 +1,7 @@
 //! `nuee`: share a link, get a swarm.
 
 mod cmd {
+    pub mod build;
     pub mod completions;
     pub mod connect;
     pub mod doctor;
@@ -75,6 +76,7 @@ Exit codes:
 
 Environment:
   NUEE_CONFIG_DIR         identity key directory (default ~/.config/nuee)
+  NUEE_KEY                identity key, 64 hex digits, instead of the one on disk (CI)
   NUEE_DATA_DIR           data directory (default ~/.local/share/nuee)
   NUEE_ONLINE_TIMEOUT_MS  how long to wait for the relay (default 10000)
   NUEE_DURABLE_ABSENT_MS  coordinators: replace a copy whose holder is gone this long (default 600000)
@@ -143,6 +145,8 @@ enum Command {
     Pin(cmd::pin::Args),
     /// Cut a test suite across a group's machines
     Shard(cmd::shard::Args),
+    /// Build a commit on a machine of a group and bring back what it produced
+    Build(cmd::build::Args),
     /// Run a permanent group of machines
     Group(cmd::group::Args),
     /// Serve every pinned item until Ctrl-C
@@ -252,7 +256,12 @@ impl Ctx {
         if let Some(k) = self.key.get() {
             return Ok(k.clone());
         }
-        let key = if self.global.ephemeral {
+        let key = if let Ok(hex) = std::env::var("NUEE_KEY") {
+            cmd::serve::unhex(hex.trim())
+                .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+                .map(|bytes| SecretKey::from_bytes(&bytes))
+                .ok_or_else(|| fail(exit::USAGE, "NUEE_KEY is not a key (64 hex digits)"))?
+        } else if self.global.ephemeral {
             config::fresh_key()?
         } else {
             let dir = config::config_dir(self.global.config_dir.as_deref())?;
@@ -421,6 +430,7 @@ async fn dispatch(command: Command, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         Command::Pin(a) => cmd::pin::run(a, ctx).await,
         Command::Group(a) => cmd::group::run(a, ctx).await,
         Command::Shard(a) => cmd::shard::run(a, ctx).await,
+        Command::Build(a) => cmd::build::run(a, ctx).await,
         Command::Serve(a) => cmd::serve::run(a, ctx).await,
         Command::Train(a) => cmd::train::run(a, ctx).await,
         Command::Sweep(a) => cmd::sweep::run(a, ctx).await,

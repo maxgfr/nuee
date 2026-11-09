@@ -253,6 +253,95 @@ fn shards_run_on_the_group_and_failures_are_results() {
     assert!(log.contains("shard 3 of 4"), "{log}");
 }
 
+/// A CI key builds on the group's machines, without being able to do anything else.
+#[test]
+fn a_ci_key_builds_and_brings_the_output_back() {
+    const REPO: &str = "https://example.invalid/team/site.git";
+    const COMMAND: &str = "sh build.sh";
+
+    let relay_node = Node::new();
+    let (_relay, relay) = start_relay(&relay_node);
+    let (lead, worker, ci) = (Node::new(), Node::new(), Node::new());
+
+    let source = tempfile::tempdir().expect("tempdir");
+    let dir = source.path();
+    git(dir, &["init", "-q", "-b", "main"]);
+    let script = "echo building\nmkdir -p dist/assets\necho \"made by $(git rev-parse HEAD)\" > dist/assets/app.txt\nln -s /etc/passwd dist/link\n";
+    std::fs::write(dir.join("build.sh"), script).expect("script");
+    git(dir, &["add", "build.sh"]);
+    git(dir, &["commit", "-q", "-m", "build"]);
+    let rev = git(dir, &["rev-parse", "HEAD"]);
+    let mirror = format!("{REPO}={}", dir.display());
+
+    let mut create = lead.with_relay(&relay);
+    create.args(["group", "create", "team"]);
+    let (status, out) = finish(create);
+    assert!(status.success(), "group create failed: {out:?}");
+    let link = named(&out, "link")["link"]
+        .as_str()
+        .expect("link")
+        .to_owned();
+    let mut invite = lead.with_relay(&relay);
+    invite.args(["group", "invite", &link, &worker.id(), "--name", "w"]);
+    assert!(finish(invite).0.success(), "group invite failed");
+    let mut key = lead.with_relay(&relay);
+    key.args(["group", "ci-key", &link, "--name", "github"]);
+    let (status, out) = finish(key);
+    assert!(status.success(), "ci-key failed: {out:?}");
+    let ci_key = named(&out, "ci_key")["key"]
+        .as_str()
+        .expect("key")
+        .to_owned();
+
+    let up = |node: &Node| {
+        let mut c = node.with_relay(&relay);
+        c.args(["group", "up", &link, "--slots", "1"]);
+        c.args(["--allow-repo", REPO, "--allow-command", COMMAND]);
+        c.args(["--exec-mirror", &mirror]);
+        Guard::spawn(c)
+    };
+    let lead_up = up(&lead);
+    lead_up.event("anchor");
+    let worker_up = up(&worker);
+    worker_up.event("welcome");
+
+    let build = |out_dir: &Path| {
+        let mut c = ci.with_relay(&relay);
+        c.env("NUEE_KEY", &ci_key);
+        c.args(["build", "--on", &link, "--repo", REPO, "--rev", &rev]);
+        c.args(["--keep", "dist", "--keep", "never-made"]);
+        c.arg("--out").arg(out_dir);
+        c.args(["--", COMMAND]);
+        c
+    };
+    let first = ci.path().join("first");
+    let (status, out) = finish(build(&first));
+    assert!(status.success(), "the build failed: {out:?}");
+    let report = named(&out, "build");
+    assert_eq!(report["passed"], true);
+    assert_eq!(report["files"], 1);
+    assert_eq!(report["skipped_links"], 1);
+    let made = std::fs::read_to_string(first.join("dist/assets/app.txt")).expect("output");
+    assert_eq!(made.trim(), format!("made by {rev}"));
+    let log = std::fs::read_to_string(first.join("nuee-build.log")).expect("log");
+    assert!(log.contains("building"), "{log}");
+
+    // The same commit is not built twice: the teammate's copy is the first build's.
+    let second = ci.path().join("second");
+    let start = Instant::now();
+    let (status, out) = finish(build(&second));
+    assert!(status.success(), "the second build failed: {out:?}");
+    assert!(second.join("dist/assets/app.txt").exists());
+    assert!(start.elapsed() < LIMIT);
+
+    // The key submits jobs and does nothing else.
+    let mut up_ci = ci.with_relay(&relay);
+    up_ci.env("NUEE_KEY", &ci_key);
+    up_ci.args(["group", "up", &link]);
+    let (status, _) = finish(up_ci);
+    assert_eq!(status.code(), Some(5), "a CI key is not a worker");
+}
+
 #[test]
 fn a_group_changes_coordinator_and_keeps_strangers_out() {
     let relay_node = Node::new();

@@ -1360,6 +1360,10 @@ pub(crate) fn local_native(
         }
     }
     let mut policy = nuee_exec::ExecPolicy::new(ctx.data_dir()?.join("exec"));
+    policy.hide = vec![
+        ctx.data_dir()?,
+        crate::config::config_dir(ctx.global.config_dir.as_deref())?,
+    ];
     policy.repo_source = exec_mirror_source(exec_mirror, &allow)?;
     approve_own_commands(&mut policy, &allow, commands)?;
     policy.allow = allow;

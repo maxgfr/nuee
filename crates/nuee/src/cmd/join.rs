@@ -279,6 +279,12 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 "this is a service link: use `nuee connect`",
             ));
         }
+        Link::Group(_) => {
+            return Err(fail(
+                exit::USAGE,
+                "this is a group link: use `nuee group up`",
+            ));
+        }
     };
     let fp = nuee_proto::fingerprint(&link.coordinator);
     ctx.ui.emit(

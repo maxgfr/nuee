@@ -15,6 +15,8 @@ pub const DOMAIN_MANIFEST: &[u8] = b"nuee/manifest/0";
 pub const DOMAIN_RESULT: &[u8] = b"nuee/result/0";
 /// Domain of replication order signatures.
 pub const DOMAIN_PIN: &[u8] = b"nuee/pin/0";
+/// Domain of group roster signatures.
+pub const DOMAIN_ROSTER: &[u8] = b"nuee/roster/0";
 
 /// Admission proof label on `nuee/job/0`.
 pub const PROOF_HELLO: &[u8] = b"nuee/hello/0";

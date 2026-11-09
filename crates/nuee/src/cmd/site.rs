@@ -110,6 +110,12 @@ async fn get(link: &str, out: Option<PathBuf>, force: bool, ctx: &Ctx) -> anyhow
                 "this is a service link: use `nuee connect`",
             ));
         }
+        Link::Group(_) => {
+            return Err(fail(
+                exit::USAGE,
+                "this is a group link: use `nuee group up`",
+            ));
+        }
     };
     let dest = out.unwrap_or_else(|| PathBuf::from("."));
     let net = ctx.online_net().await?;

@@ -66,6 +66,18 @@ pub struct ServiceLink {
     pub secret: [u8; 16],
 }
 
+/// Invite to a permanent group (`G`). It names the group, not a machine: the machines listed
+/// are only where to start looking for the group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupLink {
+    /// Key of the group, which the fingerprint is derived from.
+    pub group: EndpointId,
+    /// Admission secret.
+    pub secret: [u8; 16],
+    /// Machines to try first.
+    pub bootstrap: BoundedVec<Provider, MAX_LINK_PROVIDERS>,
+}
+
 /// Any link a user can paste.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
@@ -77,6 +89,8 @@ pub enum Link {
     Service(ServiceLink),
     /// Static site.
     Site(FileLink),
+    /// Permanent group.
+    Group(GroupLink),
 }
 
 /// A link cannot be read.
@@ -169,6 +183,7 @@ impl Link {
             Link::File(_) => 'F',
             Link::Service(_) => 'X',
             Link::Site(_) => 'S',
+            Link::Group(_) => 'G',
         }
     }
 
@@ -178,6 +193,7 @@ impl Link {
             Link::Job(l) => encode_payload(l),
             Link::File(l) | Link::Site(l) => encode_payload(l),
             Link::Service(l) => encode_payload(l),
+            Link::Group(l) => encode_payload(l),
         };
         join(base, self.kind_letter(), &payload)
     }
@@ -190,6 +206,10 @@ impl Link {
             'F' => decode_payload(payload).map(Link::File),
             'X' => decode_payload(payload).map(Link::Service),
             'S' => decode_payload(payload).map(Link::Site),
+            'G' => match decode_payload::<GroupLink>(payload)? {
+                l if l.bootstrap.is_empty() => Err(LinkError::Corrupt),
+                l => Ok(Link::Group(l)),
+            },
             'P' => Err(LinkError::WrongKind),
             _ => Err(LinkError::Corrupt),
         }
@@ -207,7 +227,7 @@ impl PinLink {
         let (kind, payload) = split(input)?;
         match kind {
             'P' => decode_payload(payload),
-            'J' | 'F' | 'X' | 'S' => Err(LinkError::WrongKind),
+            'J' | 'F' | 'X' | 'S' | 'G' => Err(LinkError::WrongKind),
             _ => Err(LinkError::Corrupt),
         }
     }

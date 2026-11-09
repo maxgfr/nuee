@@ -6,6 +6,7 @@ pub mod bounded;
 pub mod envelope;
 pub mod features;
 pub mod fingerprint;
+pub mod group;
 pub mod id;
 pub mod job_toml;
 pub mod limits;
@@ -18,15 +19,16 @@ pub use bounded::{BoundError, BoundedBytes, BoundedString, BoundedVec};
 pub use envelope::{build_envelope, split_envelope};
 pub use features::{ALLOWED_PROPOSALS, Proposal, WASM_FEATURES};
 pub use fingerprint::{fingerprint, fingerprint_string};
+pub use group::{Member, Roster, RosterError, SignedRoster};
 pub use id::{
-    DOMAIN_MANIFEST, DOMAIN_PIN, DOMAIN_RESULT, EndpointId, Hash, HashParseError, PROOF_HELLO,
-    PROOF_HTTP, PROOF_PIN, PROOF_TCP, PublicKey, RandomError, SecretKey, Signature, Signer,
-    check_proof, new_secret16, proof, result_message, sign_domain, sign_result, verify_domain,
-    verify_result,
+    DOMAIN_MANIFEST, DOMAIN_PIN, DOMAIN_RESULT, DOMAIN_ROSTER, EndpointId, Hash, HashParseError,
+    PROOF_HELLO, PROOF_HTTP, PROOF_PIN, PROOF_TCP, PublicKey, RandomError, SecretKey, Signature,
+    Signer, check_proof, new_secret16, proof, result_message, sign_domain, sign_result,
+    verify_domain, verify_result,
 };
 pub use job_toml::{JobError, JobKind, JobToml};
 pub use limits::LocalLimits;
-pub use link::{FileLink, JobLink, Link, LinkError, PinLink, ServiceLink};
+pub use link::{FileLink, GroupLink, JobLink, Link, LinkError, PinLink, ServiceLink};
 pub use manifest::{
     Asset, Comparator, DeltaCodec, EnvVar, ExecSpec, Manifest, ManifestError, SignedManifest,
     TrainSpec, TrainerKind, VerifyMode, VerifyPolicy,

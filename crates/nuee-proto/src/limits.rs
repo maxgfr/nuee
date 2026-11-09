@@ -37,6 +37,8 @@ pub const MAX_HTTP_HEADERS: usize = 64;
 pub const MAX_LINK_PROVIDERS: usize = 4;
 /// Largest encoded manifest.
 pub const MAX_MANIFEST: usize = 64 * KIB;
+/// Largest encoded group roster.
+pub const MAX_ROSTER: usize = 64 * KIB;
 /// Default task deadline, in milliseconds.
 pub const DEFAULT_DEADLINE_MS: u32 = 60_000;
 /// Lower clamp of a per-peer deadline, in milliseconds.

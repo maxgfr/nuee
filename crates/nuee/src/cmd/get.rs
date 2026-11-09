@@ -42,6 +42,12 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 "this is a service link: use `nuee connect`",
             ));
         }
+        Link::Group(_) => {
+            return Err(fail(
+                exit::USAGE,
+                "this is a group link: use `nuee group up`",
+            ));
+        }
     };
     let swarm = match &args.on {
         Some(on) => match Link::parse(&crate::link_arg(on)?).map_err(crate::link_failure)? {

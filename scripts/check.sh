@@ -1,16 +1,34 @@
 #!/usr/bin/env bash
 # The repository gate: formatting, lints, tests, supply chain, builds and end-to-end tests.
-# Stops at the first failing stage and names it. CI runs this script as is.
-# Usage: scripts/check.sh   (NUEE_E2E_GPU=1 is passed through to the e2e stage)
+# Stops at the first failing stage and names it. Without an argument it runs everything, in
+# order. CI runs the groups side by side; together they are every stage.
+# Usage: scripts/check.sh [static|test|e2e-1|e2e-2|fuzz]
+# (NUEE_E2E_GPU=1 is passed through to the e2e stage)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if [ "$#" -ne 0 ]; then
-  echo "usage: scripts/check.sh" >&2
+usage() {
+  echo "usage: scripts/check.sh [static|test|e2e-1|e2e-2|fuzz]" >&2
   exit 2
+}
+
+if [ "$#" -gt 1 ]; then
+  usage
 fi
+
+group="${1:-all}"
+# The end-to-end suite is cut in two for two machines, each still running one test at a time.
+e2e_args=()
+case "$group" in
+  all | static | test | fuzz) ;;
+  e2e-1 | e2e-2)
+    e2e_args=("--shard=${group#e2e-}/2")
+    group=e2e
+    ;;
+  *) usage ;;
+esac
 
 # Crates that also build for the browser (wasm32-unknown-unknown).
 WASM_CRATES=(nuee-proto nuee-core nuee-net nuee-store nuee-train nuee-web)
@@ -84,20 +102,29 @@ lint_scripts() {
   shellcheck scripts/*.sh
 }
 
-stage fmt cargo fmt --all --check
-stage clippy cargo clippy --workspace --all-targets --locked -- -D warnings
-stage clippy-wasm32 clippy_wasm
-stage build-tasks scripts/build-tasks.sh
-stage test cargo test --workspace --locked
-stage deny-audit supply_chain
-stage tasks-clippy tasks_clippy
-stage build-web scripts/build-web.sh
-stage node-test node --test web/test/
-stage e2e scripts/e2e.sh
-stage fuzz-short fuzz_short
-stage actionlint lint_workflows
-stage shellcheck lint_scripts
+# run "GROUPS" NAME COMMAND...: a stage, when the selected group is one of GROUPS.
+run() {
+  local groups="$1"
+  shift
+  if [ "$group" = all ] || [[ " $groups " == *" $group "* ]]; then
+    stage "$@"
+  fi
+}
 
-printf '\ncheck: all stages passed\n'
+run "static" fmt cargo fmt --all --check
+run "static" clippy cargo clippy --workspace --all-targets --locked -- -D warnings
+run "static" clippy-wasm32 clippy_wasm
+run "static test" build-tasks scripts/build-tasks.sh
+run "test" test cargo test --workspace --locked
+run "static" deny-audit supply_chain
+run "static" tasks-clippy tasks_clippy
+run "static" build-web scripts/build-web.sh
+run "static" node-test node --test web/test/
+run "e2e" e2e scripts/e2e.sh ${e2e_args[@]+"${e2e_args[@]}"}
+run "fuzz" fuzz-short fuzz_short
+run "static" actionlint lint_workflows
+run "static" shellcheck lint_scripts
+
+printf '\ncheck: all stages of %s passed\n' "$group"
 printf '  %s\n' "${SUMMARY[@]}"
 printf '  %-16s %4ds\n' total "$SECONDS"

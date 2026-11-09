@@ -34,6 +34,7 @@ export const VIEWS = {
   about: () => import('./views/about.js'),
   service: () => import('./views/service.js'),
   site: () => import('./views/site.js'),
+  group: () => import('./views/link.js'),
 };
 
 const WORKER_PATH = /\/app\/worker\/((iroh|task)-worker|gpu|embed|llm)\.js$/;

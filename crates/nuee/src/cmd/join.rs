@@ -13,7 +13,7 @@ use nuee_store::{HubConfig, StoreHub};
 use serde_json::json;
 use tokio::sync::mpsc;
 
-use nuee_exec::{AllowEntry, ExecApproval, ExecPolicy, NativeRunner, Sandbox};
+use nuee_exec::{AllowEntry, ExecApproval, ExecPolicy, NativeRunner, RepoRule, Sandbox};
 
 use super::run::WasmExec;
 use crate::{Ctx, exit, fail};
@@ -50,6 +50,9 @@ pub struct Args {
     /// Local LLM endpoint offered to the swarm
     #[arg(long, value_name = "URL")]
     pub llm: Option<String>,
+    /// Standing shard rules; only `nuee group up` sets them, after verifying the roster
+    #[arg(skip)]
+    pub repo_rules: Vec<RepoRule>,
 }
 
 fn ended(reason: ByeReason) -> anyhow::Result<ExitCode> {
@@ -122,7 +125,7 @@ fn pinned(args: &Args) -> anyhow::Result<Vec<AllowEntry>> {
 
 /// The native runner when `--allow-exec` or `--exec-approvals` was given; exec stays off
 /// otherwise. `session` holds the commands approved at the prompt.
-fn native_runner(
+pub(crate) fn native_runner(
     args: &Args,
     session: &[ExecApproval],
     ctx: &Ctx,
@@ -140,7 +143,7 @@ fn native_runner(
         None => Vec::new(),
     };
     approved.extend(session.iter().cloned());
-    if args.allow_exec.is_empty() && approved.is_empty() {
+    if args.allow_exec.is_empty() && approved.is_empty() && args.repo_rules.is_empty() {
         if args.exec_network || args.exec_mirror.is_some() {
             return Err(fail(
                 exit::USAGE,
@@ -163,8 +166,27 @@ fn native_runner(
     }
     policy.repo_source =
         super::run::exec_mirror_source(args.exec_mirror.as_deref(), &policy.allow)?;
+    if let Some((url, _)) = args.exec_mirror.as_deref().and_then(|m| m.split_once('='))
+        && let Some(other) = args.repo_rules.iter().find(|r| r.repo() != url)
+    {
+        return Err(fail(
+            exit::USAGE,
+            format!(
+                "--exec-mirror {url}: --allow-repo {} names another repository",
+                other.repo()
+            ),
+        ));
+    }
+    policy.repo_rules = args.repo_rules.clone();
     policy.network = args.exec_network;
     let runner = NativeRunner::new(policy);
+    if runner.sandbox() == Sandbox::None && !args.repo_rules.is_empty() {
+        return Err(fail(
+            exit::ERROR,
+            "--allow-repo needs sandbox-exec or bwrap: without a sandbox any commit of the \
+             repository would run unconfined on this machine",
+        ));
+    }
     if runner.sandbox() == Sandbox::None {
         ctx.ui
             .note("warning: no sandbox-exec or bwrap here; native commands will run unconfined");
@@ -277,6 +299,12 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             return Err(fail(
                 exit::USAGE,
                 "this is a service link: use `nuee connect`",
+            ));
+        }
+        Link::Group(_) => {
+            return Err(fail(
+                exit::USAGE,
+                "this is a group link: use `nuee group up`",
             ));
         }
     };
@@ -466,7 +494,12 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                         WorkerHostEvent::Event(WorkerEvent::JobAdded { job, name, manifest }) => {
                             ctx.ui.emit("job", json!({ "job": job, "name": name }));
                             ctx.ui.note(&format!("job {job}: {}", crate::ui::clean(&name)));
-                            if let Some(cmd) =
+                            let standing = manifest.exec.as_ref().is_some_and(|s| {
+                                args.repo_rules.iter().any(|r| r.matches(s))
+                            });
+                            if standing {
+                                // A rule of this machine covers it: nothing to ask.
+                            } else if let Some(cmd) =
                                 exec_prompt(&manifest, &pinned, &approved, &declined, interactive)
                             {
                                 if ask_exec(ctx, &manifest, &cmd)? {

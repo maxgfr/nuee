@@ -167,7 +167,7 @@ pub fn validate(bytes: &[u8]) -> Result<ModuleInfo, WebError> {
 /// What a pasted link points to, without its secrets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkInfo {
-    /// `job`, `file`, `service` or `site`.
+    /// `job`, `file`, `service`, `site` or `group`.
     pub kind: &'static str,
     /// Coordinator, host, or first provider.
     pub peer: EndpointId,
@@ -202,6 +202,19 @@ pub fn link_info(input: &str) -> Result<LinkInfo, WebError> {
         },
         Link::File(l) => file_info("file", &l)?,
         Link::Site(l) => file_info("site", &l)?,
+        Link::Group(l) => LinkInfo {
+            kind: "group",
+            peer: l.group,
+            relay: l
+                .bootstrap
+                .first()
+                .and_then(|p| p.relay.as_ref())
+                .map(|r| r.as_str().to_owned())
+                .unwrap_or_default(),
+            hash: None,
+            size: None,
+            providers: l.bootstrap.iter().map(|p| p.id).collect(),
+        },
     };
     Ok(info)
 }

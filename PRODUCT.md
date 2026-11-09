@@ -17,7 +17,7 @@ The same people also hand each other files (encrypted links), open an exposed se
 
 ## Product Purpose
 
-Nuée turns a link into a private, short-lived cloud made of the machines already in the room: browser tabs and CLI nodes compute tasks, store files, train small models and host services, with no server of ours, no account and no payment. Success: the room computes together within a minute of the link appearing, every result is checked, and nobody had to install anything to help.
+Nuée turns a link into a private cloud, short-lived or permanent, made of the machines already in the room: browser tabs and CLI nodes compute tasks, store files, train small models and host services, with no server of ours, no account and no payment. Success: the room computes together within a minute of the link appearing, every result is checked, and nobody had to install anything to help.
 
 ## Positioning
 

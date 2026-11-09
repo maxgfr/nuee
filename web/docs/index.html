@@ -43,6 +43,7 @@
     <ol>
       <li><a href="#what">What Nuée is</a></li>
       <li><a href="#quick-start">Quick start</a></li>
+      <li><a href="#examples">Real examples</a></li>
       <li><a href="#how">How it works</a></li>
       <li><a href="#modules">What you can run</a></li>
       <li><a href="#security">Security and privacy</a></li>
@@ -63,7 +64,7 @@
 <ul>
   <li><strong>Not a market.</strong> There is no payment, no credit and no token. Nobody rents anything to anybody.</li>
   <li><strong>Not a way to run large language models across peers.</strong> A model is never split between devices. The <code>llm</code> kind only scores answers with a small model that fits on one device.</li>
-  <li><strong>Not a way to run strangers’ native code in your browser.</strong> Browsers only run WebAssembly and WebGPU tasks in a sandbox. Native commands (<code>exec</code>) run only on command-line machines whose operator approved that exact command from one exact commit.</li>
+  <li><strong>Not a way to run strangers’ native code in your browser.</strong> Browsers only run WebAssembly and WebGPU tasks in a sandbox. Native commands (<code>exec</code>) run only on command-line machines whose operator approved that exact command from one exact commit, or, in a group, allowed one shard command of one repository.</li>
   <li><strong>Not anonymous and not for strangers.</strong> Relay operators see IP addresses, and anyone holding a link is a member. See <a href="#security">Security and privacy</a>.</li>
 </ul>
 </section>
@@ -116,6 +117,75 @@ task 9 done in 43 ms (1 so far)
 …
 left the swarm after 84 tasks</code></pre>
 <p>Or open the link on a phone: the tab joins the same swarm. Every verb prints human text; add <code>--json</code> to get one JSON event per line on standard output instead (see <a href="#json">NDJSON events</a>).</p>
+</section>
+
+<section aria-labelledby="examples">
+<h2 id="examples"><a href="#examples">Real examples</a></h2>
+<p>Things to do this week, with what you need for each. These recipes were tried over the public relays before they were put on this page, between two identities on one Mac; only the names of your files, repositories and machines change. Passing <code>-</code> reads a link from standard input.</p>
+
+<h3 id="ex-file"><a href="#ex-file">Send someone a file too big for email</a></h3>
+<p><strong>You need:</strong> <code>nuee</code> on your machine. The other person needs only a browser, or <code>nuee</code>.</p>
+<pre class="command"><code>nuee share big.bin</code></pre>
+<p>It prints a link and keeps serving until Ctrl-C, so leave it running. The file is encrypted before it leaves your machine. The other person opens the link in a browser (up to 256 MiB) or runs:</p>
+<pre class="command"><code>nuee get -o downloads/ -</code></pre>
+
+<h3 id="ex-dev"><a href="#ex-dev">Show a colleague what you are building, without deploying</a></h3>
+<p><strong>You need:</strong> a server running on your machine, here on port 3000, and <code>nuee</code> on both sides.</p>
+<pre class="command"><code>nuee expose 3000</code></pre>
+<p>Your colleague pastes the link, then opens <code>http://localhost:3001</code> as if the server were theirs:</p>
+<pre class="command"><code>nuee connect --port 3001 -</code></pre>
+<p>Nothing is opened on your router, and only someone holding the link gets through. Expose a development server, not an admin panel: link holders can do what a local user can.</p>
+
+<h3 id="ex-room"><a href="#ex-room">Make a whole room compute during a talk</a></h3>
+<p><strong>You need:</strong> a projector and an audience with phones. Nothing to install: <a href="../#/run">launch from the page</a>, or from a laptop:</p>
+<pre class="command"><code>nuee run demo:mandelbrot --wait-peers 1</code></pre>
+<p>Show the QR code. Each phone that scans it computes pieces of the fractal, and the image is written to <code>nuee-out/mandelbrot/mandelbrot.ppm</code>.</p>
+
+<h3 id="ex-sweep"><a href="#ex-sweep">Compare training settings on the lab’s machines</a></h3>
+<p><strong>You need:</strong> a pushed repository with a script that takes its settings as arguments and writes its result as JSON to the path it is given, such as <code>{"loss": 0.05}</code>. Write a <code>sweep.toml</code>:</p>
+<pre class="output"><code>name = "lr-sweep"
+kind = "exec"
+verify = "none"
+
+[exec]
+repo = "https://github.com/you/model"
+rev = "the full 40-character commit"
+argv = ["python3", "train.py", "--out", "$NUEE_OUT"]
+timeout = "1h"
+
+[[sweep]]
+name = "lr-0.1"
+args = ["--lr", "0.1"]
+
+[[sweep]]
+name = "lr-0.01"
+args = ["--lr", "0.01"]</code></pre>
+<pre class="command"><code>nuee sweep sweep.toml --allow-exec https://github.com/you/model@COMMIT</code></pre>
+<p>On each other machine, <code>nuee join --allow-exec https://github.com/you/model@COMMIT -</code> shows every command and asks before running it. You get one table, best first:</p>
+<pre class="output"><code>name      status   duration  peer               loss
+lr-0.01   ok           0.4s  local            0.0500
+lr-0.1    ok           0.3s  local            0.1400</code></pre>
+
+<h3 id="ex-tests"><a href="#ex-tests">Run your test suite on the team’s own machines</a></h3>
+<p><strong>You need:</strong> two machines or more, a pushed commit, and a test runner that can split its work, as <code>playwright --shard</code>, <code>jest --shard</code>, <code>node --test-shard</code> and <code>cargo nextest --partition</code> can. It is worth it for a suite that takes minutes, especially on Macs, which cost the most in hosted CI. The group’s creator runs:</p>
+<pre class="command"><code>nuee group create "team"
+nuee group invite - 5b4e4a16f96e1dcf… --name alice --keeper</code></pre>
+<p>Every machine stays in the group and says exactly what it accepts:</p>
+<pre class="command"><code>nuee group up - --allow-repo https://github.com/acme/app.git --allow-command 'node --test --test-shard={i}/{n} test/*.test.mjs'</code></pre>
+<p>Then, from any machine in the group, in a checkout whose commit is pushed:</p>
+<pre class="command"><code>nuee shard 4 --on - -- 'node --test --test-shard={i}/{n} test/*.test.mjs'</code></pre>
+<pre class="output"><code>shard-1-of-4: passed
+shard-2-of-4: FAILED
+shard-3-of-4: passed
+shard-4-of-4: passed
+error: 1 of 4 shards failed; logs in nuee-out/shard-3f2a91c07b1d</code></pre>
+<p>A machine that disappears hands its shard to another. Each shard starts from a clean checkout, so the command must install and build what it needs, with <code>--exec-network</code> on <code>nuee group up</code> if that means downloading. Allowing a repository means trusting every commit that can be pushed to it: read <a href="#groups">Permanent groups</a> first.</p>
+
+<h3 id="ex-site"><a href="#ex-site">Hand over a static site</a></h3>
+<p><strong>You need:</strong> a folder with an <code>index.html</code>.</p>
+<pre class="command"><code>nuee site publish ./public</code></pre>
+<p>Whoever holds the link sees a preview in the page, without its scripts, or downloads the site. It stays available while your command runs; to keep it online for visitors with nothing installed, see <a href="#anchor">The anchor</a>.</p>
+<pre class="command"><code>nuee site get -o site/ -</code></pre>
 </section>
 
 <section aria-labelledby="how">
@@ -332,6 +402,18 @@ tunnelling to the exposed service until Ctrl-C</code></pre>
 ✓ verified (BLAKE3)</code></pre>
 <p>The web page shows an <strong>isolated preview</strong>: the document is rebuilt without scripts, event handlers, frames or navigation, and shown in a sandboxed frame that has no script and no access to the page’s origin. A site with JavaScript previews as its static shell. Guide: <a href="https://github.com/maxgfr/nuee/blob/main/docs/HOSTING.md">docs/HOSTING.md</a>.</p>
 
+<h3 id="groups"><a href="#groups">Permanent groups</a></h3>
+<p>A swarm from <code>nuee run</code> ends with the machine that started it. A group is named by its own key, so its link stays valid when machines come and go. A roster signed by that key says who belongs and who may coordinate: holding the link is not enough.</p>
+<pre class="command"><code>nuee group create "lab"
+nuee group invite - 5b4e4a16f96e1dcf… --name alice-laptop --keeper
+nuee group up -</code></pre>
+<p>Every machine runs <code>nuee group up</code> and either coordinates or joins the one that does. <code>nuee group handoff</code> moves the coordinator role, <code>nuee group remove</code> takes a machine out, and <code>--only-when ac,idle</code> keeps a laptop from working on battery or while busy.</p>
+<p>A group can run your test suite between its machines. Each machine says exactly what it accepts, then anyone on the roster submits from a checkout whose commit is pushed:</p>
+<pre class="command"><code>nuee group up - --allow-repo https://github.com/acme/app.git --allow-command 'npm test -- --shard={i}/{n}'
+nuee shard 8 --on - -- 'npm test -- --shard={i}/{n}'</code></pre>
+<p>A failing test is a result: its log comes back and nothing is run again. A machine that disappears hands its shard to another. <code>--allow-repo</code> is off by default and requires a sandbox, but it does mean trusting every commit that can be pushed to that repository, and test results are not checked by recomputation.</p>
+<p>Today, if the coordinating machine dies the group waits for it, and a group uses one relay. Browsers cannot join a group yet. Details are in <a href="https://github.com/maxgfr/nuee/blob/main/docs/GROUPS.md">docs/GROUPS.md</a>.</p>
+
 <h3 id="anchor"><a href="#anchor">The anchor</a></h3>
 <p>Nothing in Nuée needs an anchor. <code>nuee serve --anchor</code> is <code>nuee</code> on a machine that stays on: a persistent coordinator that keeps jobs across restarts, its own relay, a store member for durable copies, and an HTTP gateway for sites. Run locally with a development relay:</p>
 <pre class="command"><code>nuee serve --anchor --relay-dev --relay-bind 127.0.0.1:0 --gateway 127.0.0.1:18780</code></pre>
@@ -417,6 +499,8 @@ done: 16 tasks, results in nuee-out/skycmd/results.json</code></pre>
     <tr><td><code>get</code></td><td>Download a shared link</td><td><code>-o/--out</code>, <code>--force</code>, <code>--on</code></td></tr>
     <tr><td><code>pin</code></td><td>Keep a copy of a share (ciphertext only) and serve it</td><td><code>--list</code>, <code>--rm</code></td></tr>
     <tr><td><code>serve</code></td><td>Serve every pinned item until Ctrl-C, or run an anchor</td><td><code>--anchor</code>, <code>--store</code>, <code>--gateway</code>, <code>--gateway-scripts</code>, <code>--relay-hostname</code>, <code>--acme-contact</code>, <code>--relay-dev</code>, <code>--relay-token-file</code>, <code>--allow</code>, <code>--allow-file</code>, <code>--approve</code>, <code>--local-slots</code></td></tr>
+    <tr><td><code>group</code></td><td>Run a permanent group of machines</td><td><code>create</code>, <code>invite</code>, <code>remove</code>, <code>status</code>, <code>handoff</code>, <code>up</code> with <code>--allow-repo</code>, <code>--allow-command</code>, <code>--only-when</code></td></tr>
+    <tr><td><code>shard</code></td><td>Cut a test suite across a group’s machines</td><td><code>--on</code>, <code>--repo</code>, <code>--rev</code>, <code>--timeout</code>, <code>--out</code></td></tr>
     <tr><td><code>train</code></td><td>Train a model across the swarm</td><td><code>--wait-peers</code>, <code>--min-workers</code>, <code>--round-timeout</code>, <code>--inner-lr</code>, <code>--codec</code>, <code>--seed</code>, <code>--deadline</code>, <code>--local-slots</code></td></tr>
     <tr><td><code>sweep</code></td><td>Run a parameter sweep</td><td><code>--allow-exec</code>, <code>--exec-mirror</code>, <code>--local-slots</code>, <code>--wait-peers</code>, <code>--out</code></td></tr>
     <tr><td><code>embed</code></td><td>Compute embeddings across the swarm</td><td><code>--verify</code>, <code>--sample</code>, <code>--local-slots</code>, <code>--out</code>, <code>--deadline</code></td></tr>

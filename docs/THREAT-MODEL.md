@@ -439,6 +439,34 @@ identities stay connected, so honest members and requesters are turned away. Anc
 coordinators that offer durable storage to a link that circulates beyond the group should run
 with `--approve`.
 
+### 4.16 Groups
+
+Threats: a holder of the link who is not a member; a removed member; a forged or replayed roster;
+a command smuggled through a standing shard rule.
+
+Mitigations:
+
+- The roster is signed by a group key held by the machine that created the group; signature,
+  group and consistency are checked before use. *`nuee-proto::group::SignedRoster::open`.*
+- A roster only replaces one of a higher revision, so an old roster cannot restore a removed
+  member. *`Roster::replaces`, `Anchor::update_roster`.*
+- The swarm admits roster members only, whatever the link proves, and the list changes with the
+  roster. Other API routes need a roster member or a key it delegated, by a signature over that
+  key; delegations end with the roster. *`Gatekeeper`, `AdminHandler::stream`, `Anchor::delegate`.*
+- Workers only follow the keeper named by a verified roster. *`cmd::group::up`.*
+- A standing rule (`--allow-repo`) is off by default, needs a sandbox or `group up` refuses to
+  start, and matches one command in the shard wrapper, its placeholders standing for digits only,
+  with no environment and no GPU. *`nuee-exec::RepoRule::matches`, `join::native_runner`.*
+
+Residual risk: **every keeper is trusted like an anchor**: it sees the group's secrets and every
+result, and can hand workers manifests. The roster tolerates machines that disappear, not keepers
+that lie. **Any machine on the roster can use the whole API**: jobs, sites and services.
+**`--allow-repo` trusts every commit that can be pushed to the repository**: its code runs in
+the sandbox, with the accepted risks of 4.2, and on the network with `--exec-network`. Shard
+results are not recomputed, so a member can report a false pass. Losing the group key freezes the
+roster, and whoever obtains it controls the group. The link's secret is still a bearer secret for
+`GET /roster`, which shows members' ids and names.
+
 ## 5. Release rule
 
 Before a release the code is audited and the pending changes reviewed; no release ships with an

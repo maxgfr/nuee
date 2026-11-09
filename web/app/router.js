@@ -3,7 +3,7 @@
 // checked for its alphabet here and fully parsed (checksum, version) by the wasm package.
 
 /**
- * @typedef {'home' | 'run' | 'train' | 'share' | 'about' | 'join' | 'file' | 'service' | 'site'} ViewName
+ * @typedef {'home' | 'run' | 'train' | 'share' | 'about' | 'join' | 'file' | 'service' | 'site' | 'group'} ViewName
  * @typedef {{ view: ViewName, link?: string, linkError?: 'link_truncated' | 'link_corrupt' }} Route
  */
 
@@ -24,6 +24,7 @@ export const LINK_VIEWS = new Map([
   ['F', 'file'],
   ['X', 'service'],
   ['S', 'site'],
+  ['G', 'group'],
 ]);
 
 const BASE32 = /^[A-Z2-7]+$/;

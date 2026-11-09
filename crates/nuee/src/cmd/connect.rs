@@ -42,6 +42,12 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
                 "this is a site link: use `nuee site get`",
             ));
         }
+        Link::Group(_) => {
+            return Err(fail(
+                exit::USAGE,
+                "this is a group link: use `nuee group up`",
+            ));
+        }
     };
     let listener = TcpListener::bind(("127.0.0.1", args.port.unwrap_or(0)))
         .await

@@ -356,12 +356,26 @@ impl RepoRule {
                 BUILD_SCRIPT => kept.len() <= MAX_KEPT && kept.iter().all(|p| kept_path_ok(p)),
                 _ => false,
             };
-        spec.repo.as_str() == self.repo
+        same_repo(spec.repo.as_str(), &self.repo)
             && spec.env.is_empty()
             && !spec.gpu
             && wrapper
             && template_matches(&self.command, command)
     }
+}
+
+/// Whether two URLs name the same repository: hosts compare without case, and a trailing `/` or
+/// `.git` does not count, as `git clone` treats them.
+pub fn same_repo(a: &str, b: &str) -> bool {
+    // Without its scheme, git would read a URL as a local path: such a URL matches nothing.
+    fn key(url: &str) -> Option<(String, &str)> {
+        let rest = url.strip_prefix("https://")?;
+        let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+        let path = path.trim_end_matches('/');
+        let path = path.strip_suffix(".git").unwrap_or(path);
+        Some((host.to_ascii_lowercase(), path))
+    }
+    key(a).is_some() && key(a) == key(b)
 }
 
 /// `https://host/...`, printable ASCII, nothing a git option parser could pick up.
@@ -747,6 +761,14 @@ impl NativeRunner {
         let repo = repo_cache(&self.policy, spec.repo.as_str()).canonicalize()?;
         if spec.gpu {
             hide.extend(HOME_SECRETS.iter().map(|p| real_home.join(p)));
+            // bwrap's network namespace does not cover sockets reached by path: the session bus,
+            // X11, an ssh agent. macOS denies them in the profile instead.
+            if cfg!(target_os = "linux") {
+                hide.extend(GPU_HIDDEN_LINUX.iter().map(PathBuf::from));
+            }
+            if let Some(agent) = std::env::var_os("SSH_AUTH_SOCK") {
+                hide.push(PathBuf::from(agent));
+            }
             hide.push(PathBuf::from("/run/docker.sock"));
             hide.push(PathBuf::from("/var/run/docker.sock"));
             return Ok(View {
@@ -1136,6 +1158,9 @@ fn hidden_areas() -> &'static [&'static str] {
     }
 }
 
+/// Where Linux keeps the sockets of a desktop session; a GPU job's drivers need none of them.
+const GPU_HIDDEN_LINUX: &[&str] = &["/tmp", "/var/tmp", "/run/user", "/run/dbus"];
+
 /// Inside the real home that a GPU job keeps: what must never reach a task.
 const HOME_SECRETS: &[&str] = &[
     ".ssh",
@@ -1203,9 +1228,12 @@ fn toolchains(
                     .file_name()
                     .is_some_and(|n| [".local", ".cargo"].contains(&n.to_str().unwrap_or_default()))
         };
+        // `~/.nvm/versions/node/v22/bin` needs its `lib`; `~/.fly/bin` must not bring the token
+        // that sits in `~/.fly`.
+        let install = |root: &Path| root.join("lib").is_dir() || root.join("libexec").is_dir();
         let root = real
             .parent()
-            .filter(|root| real.ends_with("bin") && !shared(root));
+            .filter(|root| real.ends_with("bin") && !shared(root) && install(root));
         read.push(root.map_or_else(|| real.clone(), Path::to_path_buf));
     }
     read.sort();
@@ -1523,5 +1551,27 @@ fn remove_worktree(repo: &Path, dest: &Path) {
     prune.args(["worktree", "prune"]);
     if let Err(e) = run_git(prune) {
         tracing::debug!("worktree prune: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tool_brings_its_install_but_not_a_folder_holding_its_token() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path().canonicalize().expect("home").join("home");
+        let node = home.join(".nvm/versions/node/v22");
+        let fly = home.join(".fly");
+        for d in [node.join("bin"), node.join("lib"), fly.join("bin")] {
+            std::fs::create_dir_all(d).expect("dir");
+        }
+        std::fs::write(fly.join("config.yml"), "access_token: secret").expect("token");
+        let path = std::env::join_paths([node.join("bin"), fly.join("bin")]).expect("path");
+        let (read, _) = toolchains(&home, Some(&path));
+        assert!(read.contains(&node), "{read:?}");
+        assert!(read.contains(&fly.join("bin")), "{read:?}");
+        assert!(!read.contains(&fly), "{read:?}");
     }
 }

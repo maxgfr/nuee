@@ -51,6 +51,30 @@ fn another_repository_is_refused() {
 }
 
 #[test]
+fn the_same_repository_matches_however_it_was_cloned() {
+    for same in [
+        "https://example.org/team/app",
+        "https://example.org/team/app/",
+        "https://EXAMPLE.org/team/app.git",
+    ] {
+        assert!(
+            rule().matches(&spec(same, shard_argv("npm test -- --shard=1/8"))),
+            "{same}"
+        );
+    }
+    for other in [
+        "https://example.org/Team/app.git",
+        "https://example.org/team/app2.git",
+        "example.org/team/app.git",
+    ] {
+        assert!(
+            !rule().matches(&spec(other, shard_argv("npm test -- --shard=1/8"))),
+            "{other}"
+        );
+    }
+}
+
+#[test]
 fn a_command_outside_the_shard_wrapper_is_refused() {
     let bare = vec!["npm".to_owned(), "test".to_owned()];
     assert!(!rule().matches(&spec(REPO, bare)));

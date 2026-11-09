@@ -27,5 +27,7 @@ self.addEventListener('fetch', (e) => {
   const { request } = e;
   if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
   if (OWN.includes(new URL(request.url).href.split('?')[0])) return;
-  e.respondWith(stored(request).then((hit) => hit ?? fetch(request)));
+  // A request the page dropped, or the network gone: answer as the browser would, not with an error.
+  const failed = () => (request.mode === 'navigate' ? Response.error() : new Response(null, { status: 504 }));
+  e.respondWith(stored(request).then((hit) => hit ?? fetch(request).catch(failed)));
 });

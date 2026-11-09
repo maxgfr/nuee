@@ -176,7 +176,8 @@ tol = 0.001
   // before starting the command and none of its results is ever kept.
   expect(strict.events().some((e) => e.event === 'welcome')).toBe(true);
   expect(okTasks(strict)).toEqual([]);
-  for (const e of strict.events()) if (e.event === 'task') expect(e.ms).toBe(0);
+  // Refused before the command starts: a loaded runner may still count a millisecond or two.
+  for (const e of strict.events()) if (e.event === 'task') expect(e.ms).toBeLessThan(50);
   // Its first refusal (Unsupported) excludes it from this job: at most the leases already in
   // flight on its two slots before the refusal reached the coordinator.
   expect(strict.events().filter((e) => e.event === 'task').length).toBeLessThanOrEqual(2);

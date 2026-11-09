@@ -1,9 +1,18 @@
 // @ts-check
-// Group links (#/G/…): what they point to and how to take part, since a group needs the command
-// line for now.
+// Group links (#/G/…): what they point to and the commands that take part, since a group needs
+// the command line for now.
 /** @typedef {import('../main').ViewContext} ViewContext */
-import { h } from '../lib/dom.js';
+import { h, copyButton } from '../lib/dom.js';
 import { errorArea, fingerprintBlock } from '../lib/ui.js';
+
+const BUILD = 'npm ci && npm run build';
+
+/** Each step, in the order a newcomer needs them. `-` makes the command ask for the link. */
+const STEPS = [
+  ['link.group.join', 'nuee id'],
+  ['link.group.up', `nuee group up - --allow-repo https://github.com/you/app.git --allow-command '${BUILD}' --exec-network`],
+  ['link.group.build', `nuee build --on - --keep dist -- '${BUILD}'`],
+];
 
 /** @param {ViewContext} ctx */
 export function render({ app, root, route }) {
@@ -24,7 +33,15 @@ export function render({ app, root, route }) {
           { class: 'card' },
           fingerprintBlock(info.fingerprint, 'link.group.fingerprint'),
           h('p', { i18n: `link.${kind}.body` }),
-          h('code', { class: 'mono cmd', text: 'nuee group up <link>' }),
+          h('div', { class: 'row' }, copyButton(() => location.href, 'link.group.copy')),
+          h(
+            'ol',
+            { class: 'group-steps' },
+            STEPS.map(([key, command]) =>
+              h('li', null, h('p', { i18n: key }), h('div', { class: 'row' }, h('code', { class: 'mono cmd', text: command }), copyButton(() => command))),
+            ),
+          ),
+          h('p', null, h('a', { href: 'docs/#ex-try', i18n: 'link.group.docs' })),
         ),
       );
     },

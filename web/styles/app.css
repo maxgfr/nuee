@@ -789,6 +789,9 @@ pre {
   background: var(--field);
   overflow-wrap: anywhere;
 }
+.group-steps li {
+  margin-block: var(--space-4);
+}
 
 /* Run and share */
 .drop {

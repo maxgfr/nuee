@@ -10,6 +10,7 @@ const BREW = 'brew install maxgfr/tap/nuee';
 
 /** Real uses, each with the command that starts it; the docs give the whole recipe. */
 const USES = [
+  ['home.uses.try', 'nuee group create try', 'ex-try'],
   ['home.uses.file', 'nuee share big.bin', 'ex-file'],
   ['home.uses.dev', 'nuee expose 3000', 'ex-dev'],
   ['home.uses.sweep', 'nuee sweep sweep.toml', 'ex-sweep'],

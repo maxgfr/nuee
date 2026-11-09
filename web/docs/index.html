@@ -123,6 +123,20 @@ left the swarm after 84 tasks</code></pre>
 <h2 id="examples"><a href="#examples">Real examples</a></h2>
 <p>Things to do this week, with what you need for each. These recipes were tried over the public relays before they were put on this page, between two identities on one Mac; only the names of your files, repositories and machines change. Passing <code>-</code> reads a link from standard input.</p>
 
+<h3 id="ex-try"><a href="#ex-try">Try a team test run alone, in two minutes</a></h3>
+<p><strong>You need:</strong> <code>nuee</code>, <code>git</code>, a recent Node.js and two terminals. There is no account to create, and the tests are this project’s own.</p>
+<pre class="command"><code>git clone --depth 1 https://github.com/maxgfr/nuee.git
+cd nuee</code></pre>
+<pre class="command"><code>nuee group create try</code></pre>
+<p>Copy the link it prints. In the first terminal, your machine becomes the group, and accepts only this repository and this command. Paste the link when the command waits for it, then leave it running:</p>
+<pre class="command"><code>nuee group up - --allow-repo https://github.com/maxgfr/nuee.git --allow-command 'node --test --test-shard={i}/{n} web/test/router.test.mjs web/test/i18n.test.mjs'</code></pre>
+<p>In the second terminal, in the same folder, ask for the suite cut in two, and paste the link again:</p>
+<pre class="command"><code>nuee shard 2 --on - -- 'node --test --test-shard={i}/{n} web/test/router.test.mjs web/test/i18n.test.mjs'</code></pre>
+<pre class="output"><code>shard-1-of-2: passed
+shard-2-of-2: passed
+all 2 shards passed; logs in nuee-out/shard-7a8432b6d36c</code></pre>
+<p>Each half ran from a clean checkout of the commit, in a sandbox, without network. Run the same line again: the result comes back in about a second, because that commit has already been tested. For several people, see <a href="#ex-tests">the test suite</a>, <a href="#ex-build">builds</a> and <a href="#ex-ci">GitHub Actions</a>.</p>
+
 <h3 id="ex-file"><a href="#ex-file">Send someone a file too big for email</a></h3>
 <p><strong>You need:</strong> <code>nuee</code> on your machine. The other person needs only a browser, or <code>nuee</code>.</p>
 <pre class="command"><code>nuee share big.bin</code></pre>

@@ -537,8 +537,11 @@ mod tests {
     use super::default_log_filter;
 
     #[test]
-    fn default_verbosity_hides_dns_resolver_warnings() {
-        assert_eq!(default_log_filter(0), "warn,n0_dns_resolver=error");
+    fn default_verbosity_hides_harmless_warnings() {
+        assert_eq!(
+            default_log_filter(0),
+            "warn,n0_dns_resolver=error,iroh::protocol=error"
+        );
         assert!(
             tracing_subscriber::EnvFilter::try_new(default_log_filter(0)).is_ok(),
             "the default filter parses"

@@ -17,6 +17,7 @@ mod cmd {
     pub mod run;
     pub mod selftest;
     pub mod serve;
+    pub mod server_files;
     pub mod shard;
     pub mod share;
     pub mod site;

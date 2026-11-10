@@ -4,6 +4,7 @@
 //! keeper that does (`join`). The machine that created the group holds its key and is the only
 //! one that can change the roster.
 
+use std::io::IsTerminal as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
@@ -123,10 +124,28 @@ enum Verb {
         /// Its name or id
         name: String,
     },
-    /// Show the group's machines
+    /// Show the group: its machines and which are on line, its jobs, files and sites
     Status {
         /// The group link, or `-` to read it from stdin
         link: String,
+        /// Show it again every few seconds, until Ctrl-C
+        #[arg(long, conflicts_with = "check")]
+        watch: bool,
+        /// Exit with code 3 when no keeper coordinates the group, for a monitoring check
+        #[arg(long)]
+        check: bool,
+    },
+    /// Prepare an always-on server for the group (on the machine that created it): adds a new
+    /// keeper to the roster and writes the files that install it on a Linux server
+    Host {
+        /// The group link, or `-` to read it from stdin
+        link: String,
+        /// Name shown to the group
+        #[arg(long, default_value = "server")]
+        name: String,
+        /// Folder to write install.sh, cloud-init.yaml and README.txt to
+        #[arg(short, long, value_name = "DIR", default_value = "nuee-server")]
+        out: PathBuf,
     },
     /// Make another keeper coordinate the group (on the machine that created it)
     Handoff {
@@ -276,7 +295,8 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             force,
         } => get(&link, &name, &out, force, ctx).await,
         Verb::Rm { link, name } => rm(&link, &name, ctx).await,
-        Verb::Status { link } => status(&link, ctx).await,
+        Verb::Status { link, watch, check } => status(&link, watch, check, ctx).await,
+        Verb::Host { link, name, out } => host(&link, &name, &out, ctx).await,
         Verb::Handoff { link, id } => handoff(&link, &id, ctx).await,
         Verb::Up(a) => up(a, ctx).await,
     }
@@ -868,25 +888,7 @@ async fn invite(
     let mut link = parse_link(link_text)?;
     let id = parse_id(id)?;
     let name = name_of(name)?;
-    let roster = change_roster(&link, ctx, |members| {
-        if members.iter().any(|m| m.id == id) {
-            return Err(fail(exit::USAGE, "this machine is already in the group"));
-        }
-        let next_rank = members
-            .iter()
-            .filter_map(|m| m.keeper_rank)
-            .max()
-            .map(|r| r + 1);
-        members.push(Member {
-            id,
-            name,
-            worker: true,
-            store: false,
-            keeper_rank: keeper.then(|| next_rank.unwrap_or(0)),
-        });
-        Ok(())
-    })
-    .await?;
+    let roster = change_roster(&link, ctx, |members| add_member(members, id, name, keeper)).await?;
     ctx.ui.emit(
         "invited",
         json!({ "id": id.to_string(), "revision": roster.revision, "keeper": keeper }),
@@ -908,6 +910,110 @@ async fn invite(
         "{id} is in the group (roster revision {})",
         roster.revision
     ));
+    Ok(ExitCode::SUCCESS)
+}
+
+/// A machine that works, and coordinates after the keepers already there when `keeper`.
+fn add_member(
+    members: &mut Vec<Member>,
+    id: EndpointId,
+    name: BoundedString<64>,
+    keeper: bool,
+) -> anyhow::Result<()> {
+    if members.iter().any(|m| m.id == id) {
+        return Err(fail(exit::USAGE, "this machine is already in the group"));
+    }
+    let next_rank = members
+        .iter()
+        .filter_map(|m| m.keeper_rank)
+        .max()
+        .map(|r| r + 1);
+    members.push(Member {
+        id,
+        name,
+        worker: true,
+        store: false,
+        keeper_rank: keeper.then(|| next_rank.unwrap_or(0)),
+    });
+    Ok(())
+}
+
+/// A new keeper with a key made here, and the files that start it on a server.
+async fn host(
+    link_text: &str,
+    name: &str,
+    out: &std::path::Path,
+    ctx: &Ctx,
+) -> anyhow::Result<ExitCode> {
+    let mut link = parse_link(link_text)?;
+    let name = name_of(name)?;
+    if out.read_dir().is_ok_and(|mut d| d.next().is_some()) {
+        return Err(fail(
+            exit::USAGE,
+            format!(
+                "{} is not empty; name another folder with -o",
+                out.display()
+            ),
+        ));
+    }
+    // Checked before the roster changes, so that a refusal leaves no keeper without a server.
+    owner_key(ctx, &link.group)?;
+    let key = config::fresh_key()?;
+    let id = key.public();
+    let roster = change_roster(&link, ctx, |members| {
+        add_member(members, id, name.clone(), true)
+    })
+    .await?;
+    let relay = group_relay(&link).unwrap_or_default();
+    if link.bootstrap.push(provider(id, &relay)?).is_err() {
+        ctx.ui.note(
+            "the link already lists as many keepers as it can; the server is not one of them",
+        );
+    }
+    let url = Link::Group(link.clone()).to_url(&ctx.global.web_base);
+    let script = super::server_files::install_script(
+        &url,
+        &key.to_bytes(),
+        env!("CARGO_PKG_VERSION"),
+        name.as_str(),
+    );
+    let files = [
+        ("install.sh", script.clone()),
+        ("cloud-init.yaml", super::server_files::cloud_init(&script)),
+        (
+            "README.txt",
+            super::server_files::readme(name.as_str(), &id.to_string()),
+        ),
+    ];
+    for (file, text) in &files {
+        write_in_private_dir(&out.join(file), text.as_bytes())?;
+    }
+    ctx.ui.emit(
+        "host",
+        json!({
+            "id": id.to_string(),
+            "name": name.as_str(),
+            "revision": roster.revision,
+            "link": url,
+            "out": out.display().to_string(),
+        }),
+    );
+    if !ctx.ui.is_json() {
+        ctx.ui.say(&format!(
+            "{id} ({name}) is a keeper of the group (roster revision {})",
+            roster.revision
+        ));
+        ctx.ui.say(&format!(
+            "to start it, paste {} as the user data of a new Linux server, or run {} as root on one",
+            out.join("cloud-init.yaml").display(),
+            out.join("install.sh").display()
+        ));
+        ctx.ui.note(
+            "both files hold the server's key: keep them secret and delete them once it runs",
+        );
+        ctx.ui.say("the group's link now also lists the server:");
+        ctx.ui.show_link("group", &url, Some(&link.group), None)?;
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1011,14 +1117,72 @@ fn describe(m: &Member) -> Value {
     })
 }
 
-async fn status(link_text: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
+/// How often `group status --watch` looks again.
+const WATCH_EVERY: Duration = Duration::from_secs(5);
+
+async fn status(link_text: &str, watch: bool, check: bool, ctx: &Ctx) -> anyhow::Result<ExitCode> {
     let link = parse_link(link_text)?;
     let net = control_net(ctx, &link).await?;
-    let (_, roster) = newest_roster(&net, &link, ctx)
+    loop {
+        let shown = show_status(&net, &link, watch, ctx).await;
+        if !watch {
+            return match shown? {
+                false if check => Err(fail(exit::NETWORK, "no keeper coordinates the group")),
+                _ => Ok(ExitCode::SUCCESS),
+            };
+        }
+        if let Err(e) = shown {
+            ctx.ui.note(&format!("{e:#}; looking again"));
+        }
+        tokio::select! {
+            () = tokio::time::sleep(WATCH_EVERY) => {}
+            () = crate::ctrl_c() => return Ok(ExitCode::SUCCESS),
+        }
+    }
+}
+
+/// Prints the group once; whether a keeper coordinates it.
+async fn show_status(net: &Net, link: &GroupLink, watch: bool, ctx: &Ctx) -> anyhow::Result<bool> {
+    let (_, roster) = newest_roster(net, link, ctx)
         .await?
         .ok_or_else(|| fail(exit::NETWORK, "no machine of the group answered"))?;
-    let members: Vec<Value> = roster.members.iter().map(describe).collect();
-    let leader = coordinator(&net, &link, &roster, None).await?;
+    let leader = coordinator(net, link, &roster, None).await?;
+    let overview = match leader {
+        Some(id) => {
+            let target = service_link(link, id, &group_relay(link).unwrap_or_default())?;
+            let asked = tokio::time::timeout(
+                group_time(ASK_TIMEOUT),
+                serve::admin(net, &target, "GET", "/overview", None),
+            );
+            match asked.await {
+                Ok(Ok((200, v))) => Some(v),
+                // A keeper from before 0.8 has no overview: the roster is all there is.
+                _ => None,
+            }
+        }
+        None => None,
+    };
+    let members: Vec<Value> = roster
+        .members
+        .iter()
+        .map(|m| {
+            let mut v = describe(m);
+            let seen = overview.as_ref().and_then(|o| {
+                o["members"]
+                    .as_array()?
+                    .iter()
+                    .find(|x| x["id"] == v["id"])
+                    .cloned()
+            });
+            if let (Some(seen), Some(out)) = (seen, v.as_object_mut()) {
+                for key in ["role", "online", "slots", "working", "done"] {
+                    out.insert(key.to_owned(), seen[key].clone());
+                }
+            }
+            v
+        })
+        .collect();
+    let field = |key: &str| overview.as_ref().map(|o| o[key].clone());
     ctx.ui.emit(
         "group",
         json!({
@@ -1027,26 +1191,148 @@ async fn status(link_text: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
             "revision": roster.revision,
             "members": members,
             "coordinator": leader.map(|id| id.to_string()),
+            "jobs": field("jobs"),
+            "running": field("running"),
+            "files": field("files"),
+            "sites": field("sites"),
         }),
     );
     if !ctx.ui.is_json() {
-        ctx.ui.say(&format!(
-            "{} · roster revision {} · fingerprint {}",
-            roster.name,
-            roster.revision,
-            nuee_proto::fingerprint_string(&link.group)
-        ));
-        for m in roster.members.iter() {
-            let role = match m.keeper_rank {
+        if watch && std::io::stderr().is_terminal() {
+            // Each refresh replaces the last one on screen.
+            eprint!("\x1b[2J\x1b[H");
+        }
+        for line in status_lines(&roster, link, leader, overview.as_ref()) {
+            ctx.ui.say(&line);
+        }
+    }
+    Ok(leader.is_some())
+}
+
+/// The human view of `group status`.
+fn status_lines(
+    roster: &Roster,
+    link: &GroupLink,
+    leader: Option<EndpointId>,
+    overview: Option<&Value>,
+) -> Vec<String> {
+    let mut lines = vec![format!(
+        "{} · roster revision {} · fingerprint {}",
+        roster.name,
+        roster.revision,
+        nuee_proto::fingerprint_string(&link.group)
+    )];
+    let seen = |id: &EndpointId| {
+        overview.and_then(|o| {
+            o["members"]
+                .as_array()?
+                .iter()
+                .find(|m| m["id"].as_str() == Some(id.to_string().as_str()))
+        })
+    };
+    let workers = roster.members.iter().filter(|m| m.worker).count();
+    let on_line = roster
+        .members
+        .iter()
+        .filter(|m| seen(&m.id).is_some_and(|v| v["online"] == true))
+        .count();
+    lines.push(match (leader, overview) {
+        (None, _) => {
+            "no keeper coordinates the group: start `nuee group up` on a keeper".to_owned()
+        }
+        (Some(_), None) => "a keeper coordinates the group (it is too old to say more)".to_owned(),
+        (Some(_), Some(o)) => {
+            let sites: Vec<&str> = o["sites"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|s| s["name"].as_str())
+                .collect();
+            let mut line = format!(
+                "{on_line} of {workers} machines on line · {} running · {} kept",
+                plural(o["running"].as_u64().unwrap_or(0), "job"),
+                plural(o["files"].as_u64().unwrap_or(0), "file"),
+            );
+            if !sites.is_empty() {
+                line.push_str(&format!(" · sites: {}", sites.join(", ")));
+            }
+            line
+        }
+    });
+    lines.push(String::new());
+    for m in roster.members.iter() {
+        let v = seen(&m.id);
+        let role = v
+            .and_then(|v| v["role"].as_str())
+            .unwrap_or(match m.keeper_rank {
                 Some(_) if Some(m.id) == leader => "coordinates",
                 Some(_) => "keeper",
                 None if m.worker => "member",
                 None => "submits",
-            };
-            ctx.ui.say(&format!("{role:<12} {} {}", m.id, m.name));
+            });
+        let dot = match v.map(|v| &v["online"]) {
+            Some(Value::Bool(true)) => "●",
+            Some(Value::Bool(false)) => "○",
+            _ => " ",
+        };
+        let mut what = Vec::new();
+        if let Some(v) = v {
+            if v["online"] == false {
+                what.push("off line".to_owned());
+            }
+            if let Some(n) = v["slots"].as_u64() {
+                what.push(plural(n, "slot"));
+            }
+            if let Some(n) = v["working"].as_u64().filter(|n| *n > 0) {
+                what.push(format!("working on {n}"));
+            }
+            if let Some(n) = v["done"].as_u64().filter(|n| *n > 0) {
+                what.push(format!("{n} done"));
+            }
+        }
+        lines.push(
+            format!(
+                "{dot} {:<16} {role:<12} {}  {}",
+                m.name.as_str(),
+                m.id.fmt_short(),
+                what.join(", ")
+            )
+            .trim_end()
+            .to_owned(),
+        );
+    }
+    let jobs = overview
+        .and_then(|o| o["jobs"].as_array())
+        .filter(|j| !j.is_empty());
+    if let Some(jobs) = jobs {
+        lines.push(String::new());
+        lines.push("jobs, newest first:".to_owned());
+        for j in jobs {
+            let failed = j["failed"].as_u64().unwrap_or(0);
+            lines.push(format!(
+                "  #{:<5} {:<24} {:<8} {}/{} tasks{}",
+                j["job"],
+                j["name"].as_str().unwrap_or_default(),
+                j["state"].as_str().unwrap_or_default(),
+                j["done"],
+                j["tasks"],
+                if failed > 0 {
+                    format!(", {failed} failed")
+                } else {
+                    String::new()
+                }
+            ));
         }
     }
-    Ok(ExitCode::SUCCESS)
+    lines
+}
+
+fn plural(n: u64, word: &str) -> String {
+    if n == 1 {
+        format!("1 {word}")
+    } else {
+        format!("{n} {word}s")
+    }
 }
 
 /// Returns once a roster newer than `revision` has been kept, or the coordinator stays silent.

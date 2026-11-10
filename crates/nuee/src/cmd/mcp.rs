@@ -27,7 +27,7 @@ fn tools() -> Value {
     json!([
         {
             "name": "group_status",
-            "description": "List the machines of the group and which one coordinates.",
+            "description": "Show the group: its machines and which are on line, which one coordinates, its recent jobs, how many files it keeps and its sites.",
             "inputSchema": object(json!({}), json!([])),
         },
         {

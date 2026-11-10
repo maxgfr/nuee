@@ -663,3 +663,112 @@ fn the_mcp_server_lists_its_tools_and_refuses_unknown_ones() {
     assert_eq!(replies[2]["error"]["code"], -32602);
     assert_eq!(replies[3]["error"]["code"], -32601);
 }
+
+/// `group host` adds a keeper whose key is only in the files it writes: a machine given that
+/// key by the install script joins as that keeper, and `group status` shows it on line.
+#[test]
+fn a_hosted_server_joins_with_the_key_of_its_install_script() {
+    let relay_node = Node::new();
+    let (_relay, relay) = start_relay(&relay_node);
+    let (owner, server) = (Node::new(), Node::new());
+
+    let mut create = owner.with_relay(&relay);
+    create.args(["group", "create", "team"]);
+    let (status, out) = finish(create);
+    assert!(status.success(), "group create failed: {out:?}");
+    let link = named(&out, "link")["link"]
+        .as_str()
+        .expect("link")
+        .to_owned();
+
+    let mut up = owner.with_relay(&relay);
+    up.args(["group", "up", &link, "--slots", "1"]);
+    let up = Guard::spawn(up);
+    up.event("anchor");
+
+    let files = owner.path().join("server");
+    let mut host = owner.with_relay(&relay);
+    host.args(["group", "host", &link, "--name", "vps", "-o"])
+        .arg(&files);
+    let (status, out) = finish(host);
+    assert!(status.success(), "group host failed: {out:?}");
+    let hosted = named(&out, "host");
+    let id = hosted["id"].as_str().expect("id").to_owned();
+    assert_eq!(hosted["revision"], 2);
+    let link = hosted["link"].as_str().expect("link").to_owned();
+    for file in ["install.sh", "cloud-init.yaml", "README.txt"] {
+        assert!(files.join(file).is_file(), "{file} missing");
+    }
+    let mode = |p: &Path| {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::metadata(p).expect("metadata").permissions().mode()
+    };
+    assert_eq!(
+        mode(&files.join("install.sh")) & 0o077,
+        0,
+        "the script holds a key"
+    );
+
+    // Write the key as the script does, on the server's side.
+    let script = std::fs::read_to_string(files.join("install.sh")).expect("script");
+    const KEY_FILE: &str = ">/var/lib/nuee/config/secret.key";
+    let printf = script
+        .lines()
+        .find_map(|l| l.strip_suffix(KEY_FILE))
+        .expect("key line");
+    let key = Command::new("sh")
+        .args(["-c", printf])
+        .output()
+        .expect("printf");
+    assert_eq!(key.stdout.len(), 32);
+    let config = server.path().join("config");
+    {
+        use std::io::Write as _;
+        use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _};
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&config)
+            .expect("config dir");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(config.join("secret.key"))
+            .and_then(|mut f| f.write_all(&key.stdout))
+            .expect("key");
+    }
+    assert_eq!(server.id(), id, "the script carries the invited key");
+    assert!(script.contains(&format!("printf '%s\\n' '{link}'")));
+
+    let mut up_server = server.with_relay(&relay);
+    up_server.args(["group", "up", &link, "--slots", "1"]);
+    let up_server = Guard::spawn(up_server);
+    up_server.event("coordinator");
+
+    let deadline = Instant::now() + LIMIT;
+    loop {
+        let mut status = owner.with_relay(&relay);
+        status.args(["group", "status", &link]);
+        let (code, out) = finish(status);
+        assert!(code.success(), "group status failed: {out:?}");
+        let group = named(&out, "group");
+        let vps = group["members"]
+            .as_array()
+            .expect("members")
+            .iter()
+            .find(|m| m["name"] == "vps")
+            .cloned()
+            .expect("vps listed");
+        if vps["online"] == true {
+            assert_eq!(vps["role"], "keeper");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the server never showed on line: {group}"
+        );
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    drop(up_server);
+    drop(up);
+}

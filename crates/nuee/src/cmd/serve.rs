@@ -556,8 +556,78 @@ fn submitter_may(method: &str, path: &str) -> bool {
     let root = path.split(['/', '?']).next().unwrap_or_default();
     matches!(
         (method, root),
-        ("POST" | "GET", "jobs") | ("GET", "status" | "roster")
+        ("POST" | "GET", "jobs") | ("GET", "status" | "roster" | "overview")
     )
+}
+
+/// Most jobs an overview lists, newest first.
+const OVERVIEW_JOBS: usize = 20;
+
+/// What the group looks like from its coordinator: who is on line, the jobs, how many files it
+/// keeps and the names of its sites. Holds no content, no file name and no command, since
+/// anyone with the group's link may read it.
+fn overview_of(
+    roster: &Roster,
+    me: EndpointId,
+    peers: &[nuee_core::PeerStatus],
+    book: &Book,
+) -> Value {
+    let members: Vec<Value> = roster
+        .members
+        .iter()
+        .map(|m| {
+            let peer = peers.iter().find(|p| p.id == m.id && !p.banned);
+            let role = match m.keeper_rank {
+                Some(_) if m.id == me => "coordinates",
+                Some(_) => "keeper",
+                None if m.worker => "member",
+                None => "submits",
+            };
+            let online = if m.id == me {
+                Some(true)
+            } else if m.worker {
+                Some(peer.is_some())
+            } else {
+                None
+            };
+            json!({
+                "id": m.id.to_string(),
+                "name": m.name.as_str(),
+                "role": role,
+                "online": online,
+                "slots": peer.map(|p| p.slots),
+                "working": peer.map(|p| p.inflight),
+                "done": peer.map(|p| p.done),
+            })
+        })
+        .collect();
+    let jobs: Vec<Value> = book
+        .jobs
+        .values()
+        .rev()
+        .take(OVERVIEW_JOBS)
+        .map(JobRecord::summary)
+        .collect();
+    let running = book
+        .jobs
+        .values()
+        .filter(|j| j.state == JobState::Running)
+        .count();
+    let sites: Vec<Value> = book
+        .sites
+        .iter()
+        .map(|s| json!({ "name": s.name, "id": s.id }))
+        .collect();
+    json!({
+        "group": roster.name.as_str(),
+        "revision": roster.revision,
+        "coordinator": me.to_string(),
+        "members": members,
+        "jobs": jobs,
+        "running": running,
+        "files": book.drive.len(),
+        "sites": sites,
+    })
 }
 
 /// Most short-lived keys remembered at once.
@@ -1036,6 +1106,23 @@ impl Anchor {
         }
     }
 
+    /// `GET /overview`: the group seen from its coordinator.
+    async fn overview(&self) -> Reply {
+        let Some(g) = &self.group else {
+            return err(404, "this anchor is not a group");
+        };
+        let roster = match g.roster.lock().await.open(&g.id) {
+            Ok(r) => r,
+            Err(e) => return err(500, format!("the kept roster does not open: {e}")),
+        };
+        let peers = match self.handle.status().await {
+            Ok(status) => status.peers,
+            Err(e) => return err(503, e.to_string()),
+        };
+        let book = self.book.lock().await;
+        (200, overview_of(&roster, self.net.id(), &peers, &book))
+    }
+
     /// `GET /names/<name>` on the read-only channel: the site's link, served by this machine.
     async fn named_site(&self, name: &str) -> Reply {
         let book = self.book.lock().await;
@@ -1351,6 +1438,7 @@ impl Anchor {
                     }),
                 )
             }
+            ("GET", ["overview"]) => self.overview().await,
             ("GET", ["roster"]) => match &self.group {
                 Some(g) => match nuee_proto::encode(&*g.roster.lock().await) {
                     Ok(bytes) => (200, json!({ "roster": hex(&bytes) })),
@@ -1392,7 +1480,7 @@ impl Anchor {
             (
                 _,
                 [
-                    "status" | "jobs" | "sites" | "services" | "roster" | "drive",
+                    "status" | "jobs" | "sites" | "services" | "roster" | "drive" | "overview",
                     ..,
                 ],
             ) => err(405, "method not allowed"),
@@ -1460,6 +1548,7 @@ impl AdminHandler {
                 let member = match &self.anchor.group {
                     Some(g) => {
                         path == "roster"
+                            || path == "overview"
                             || limited
                             || allowed(&g.allow, &peer)
                             || allowed(&g.delegated, &peer)
@@ -2719,6 +2808,118 @@ mod tests {
         assert_eq!(names, ["index.html", "css/a.css"]);
         let mixed = vec![("a/x".to_owned(), Vec::new()), ("b".to_owned(), Vec::new())];
         assert_eq!(strip_root(mixed.clone()), mixed);
+    }
+
+    fn id(seed: u8) -> EndpointId {
+        SecretKey::from_bytes(&[seed; 32]).public()
+    }
+
+    fn member(seed: u8, name: &str, worker: bool, keeper_rank: Option<u16>) -> nuee_proto::Member {
+        nuee_proto::Member {
+            id: id(seed),
+            name: BoundedString::try_from(name).expect("name"),
+            worker,
+            store: false,
+            keeper_rank,
+        }
+    }
+
+    fn job(id: u32, name: &str, state: JobState) -> JobRecord {
+        JobRecord {
+            id,
+            key: String::new(),
+            name: name.to_owned(),
+            manifest: "secret manifest".to_owned(),
+            inputs: vec![String::new(); 4],
+            bundle: String::new(),
+            bundle_size: 0,
+            submitter: "someone".to_owned(),
+            state,
+            done: BTreeMap::from([(0, String::new())]),
+            failed: 0,
+            results: None,
+        }
+    }
+
+    #[test]
+    fn the_overview_says_who_is_on_line_and_holds_no_content() {
+        let mut members = BoundedVec::new();
+        for m in [
+            member(1, "alice", true, Some(0)),
+            member(2, "bob", true, Some(1)),
+            member(3, "carol", true, None),
+            member(4, "github", false, None),
+        ] {
+            members.push(m).expect("room");
+        }
+        let roster = Roster {
+            version: nuee_proto::PROTO_VERSION,
+            group: id(9),
+            name: BoundedString::try_from("team").expect("name"),
+            revision: 3,
+            members,
+        };
+        let bob = nuee_core::PeerStatus {
+            id: id(2),
+            browser: false,
+            slots: 4,
+            inflight: 2,
+            done: 7,
+            verified: 0,
+            banned: false,
+        };
+        let mut book = Book::default();
+        for n in 1..=25 {
+            book.jobs.insert(n, job(n, "shard", JobState::Done));
+        }
+        book.jobs.insert(26, job(26, "build", JobState::Running));
+        book.drive.push(DriveFile {
+            id: "d1".to_owned(),
+            name: "tax-return.pdf".to_owned(),
+            link: "https://x/#/F/secret".to_owned(),
+        });
+        book.sites.push(SiteRecord {
+            id: "s1".to_owned(),
+            link: "https://x/#/S/secret".to_owned(),
+            name: Some("blog".to_owned()),
+        });
+
+        let v = overview_of(&roster, id(1), &[bob], &book);
+        let by = |name: &str| {
+            v["members"]
+                .as_array()
+                .expect("members")
+                .iter()
+                .find(|m| m["name"] == name)
+                .cloned()
+                .expect("member")
+        };
+        assert_eq!(by("alice")["role"], "coordinates");
+        assert_eq!(by("alice")["online"], true);
+        assert_eq!(by("bob")["role"], "keeper");
+        assert_eq!(by("bob")["online"], true);
+        assert_eq!(by("bob")["working"], 2);
+        assert_eq!(by("bob")["done"], 7);
+        assert_eq!(by("carol")["online"], false);
+        assert_eq!(by("github")["role"], "submits");
+        assert!(by("github")["online"].is_null());
+        let jobs = v["jobs"].as_array().expect("jobs");
+        assert_eq!(jobs.len(), OVERVIEW_JOBS);
+        assert_eq!(jobs[0]["job"], 26);
+        assert_eq!(v["running"], 1);
+        assert_eq!(v["files"], 1);
+        assert_eq!(v["sites"][0]["name"], "blog");
+        // Readable by anyone with the group's link: no file name, link, manifest or submitter.
+        let text = v.to_string();
+        for private in ["tax-return", "secret", "someone"] {
+            assert!(!text.contains(private), "{private} in {text}");
+        }
+    }
+
+    #[test]
+    fn ci_keys_and_link_holders_may_read_the_overview() {
+        assert!(submitter_may("GET", "overview"));
+        assert!(!submitter_may("GET", "drive"));
     }
 
     #[test]

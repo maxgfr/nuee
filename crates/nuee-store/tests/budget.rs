@@ -11,7 +11,8 @@ use nuee_net::driver::{BlobError, BlobHub};
 use nuee_net::{Net, NetConfig, RelayChoice};
 use nuee_proto::{ALPN_PIN, BoundedString, BoundedVec, Caps, Hash, JobLink, SecretKey};
 use nuee_store::durable::{
-    DurabilityService, ReplicaAnswer, ServiceConfig, StoreMember, release_pin, request_replicas,
+    DurabilityService, DurableConfig, ReplicaAnswer, ServiceConfig, StoreMember, release_pin,
+    request_replicas,
 };
 use nuee_store::{
     HubConfig, OutputCappedHub, Registry, StoreError, StoreHub, blob_tag, share_bytes,
@@ -170,6 +171,12 @@ async fn durable(base: u8, quota: u64, gc: Duration) -> Durable {
         job.secret,
         ServiceConfig {
             tick: Duration::from_millis(200),
+            // A copy that fails once (a connection still being set up on a busy machine) is
+            // ordered again soon, not after the ten minutes a real swarm waits.
+            durable: DurableConfig {
+                retry_after_ms: 500,
+                ..DurableConfig::default()
+            },
             ..ServiceConfig::default()
         },
         None,

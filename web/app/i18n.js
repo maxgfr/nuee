@@ -92,7 +92,7 @@ const en = {
   'site.about': 'A static site of {size}, encrypted. It is checked against the link before anything is shown.',
   'site.downloadTar': 'Download the site (.tar)',
   'site.dynamic': 'For a dynamic site, open it on your own machine with',
-  'site.banner': 'Isolated preview — scripts disabled, nothing from this site can reach this page.',
+  'site.banner': 'Isolated preview: the site’s scripts and links are off here, so nothing from it can reach this page. The loader runs it whole, on another address.',
   'site.frameTitle': 'Isolated preview of the shared site',
   'site.page': 'Page shown: {page}',
   'site.ready': 'The preview is ready.',

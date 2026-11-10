@@ -77,7 +77,8 @@ test('a tab hosts the sample site under a name that the CLI, the page and the lo
   expect(frame).toBeTruthy();
   if (!frame) return;
   await expect(frame.locator('h1')).toHaveText('This page has no server');
-  await expect(frame.locator('#where')).toHaveText('With the loader, this page runs on the address of whoever hosts it.');
+  await expect(frame.locator('#where')).toContainText('scripts and links are off');
+  await expect(frame.locator('#count')).toBeDisabled();
 
   // The loader the page hands out serves it, script included, from another origin.
   const [saved] = await Promise.all([tab.waitForEvent('download'), tab.getByRole('button', { name: 'Download the loader' }).click()]);
@@ -90,6 +91,8 @@ test('a tab hosts the sample site under a name that the CLI, the page and the lo
   const site = await h.page(browser, 'site');
   await site.goto(origin);
   await expect(site.locator('#where')).toContainText(`runs on ${origin.replace(/\/$/, '')}`, { timeout: 90_000 });
+  await site.locator('#count').click();
+  await expect(site.locator('#count')).toHaveText('Clicked 1 time');
   await site.locator('a').click();
   await expect(site.locator('h1')).toHaveText('How it works');
   h.checkPages();

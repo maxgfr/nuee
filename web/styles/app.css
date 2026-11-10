@@ -1187,6 +1187,14 @@ progress::-moz-progress-bar {
 .peers .num {
   text-align: right;
 }
+.group-machines tr.off td,
+.group-machines tr.off th {
+  color: var(--pencil);
+}
+.group-live table + table,
+.group-live table + p {
+  margin-top: var(--space-4);
+}
 .devices {
   table-layout: fixed;
 }

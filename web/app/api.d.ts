@@ -66,6 +66,8 @@ export class NueeNode {
   http(link: string, req: HttpReq): Promise<HttpResp>;
   /** The site link an `N` link points to now, from whichever keeper answers first. */
   resolveName(link: string): Promise<{ link: string }>;
+  /** What a group (`G` link) looks like now, from the keeper that coordinates it. */
+  groupOverview(link: string): Promise<GroupOverview>;
   /** Stops serving and closes the endpoint. Sessions started from this node stop working. */
   close(): Promise<void>;
 }
@@ -364,7 +366,7 @@ export type NueeEvent =
 
 export type Op =
   | 'start' | 'host' | 'join' | 'approve' | 'submit' | 'forget' | 'setSlots' | 'setWebrtc' | 'sendRtc'
-  | 'stop' | 'share' | 'publishSite' | 'fetchFile' | 'fetchSite' | 'resolveName' | 'http' | 'status' | 'parseLink'
+  | 'stop' | 'share' | 'publishSite' | 'fetchFile' | 'fetchSite' | 'resolveName' | 'groupOverview' | 'http' | 'status' | 'parseLink'
   | 'fingerprint' | 'qrSvg' | 'validateModule' | 'version' | 'laneOpen' | 'laneFrame' | 'laneClosed';
 
 /** Arguments and resolved value of each op. `session` is the id returned by host/join/share. */
@@ -390,6 +392,7 @@ export interface OpMap {
   fetchFile: { args: { link: string; progress?: number }; value: FetchedFiles };
   fetchSite: { args: { link: string; progress?: number }; value: FetchedFiles };
   resolveName: { args: { link: string }; value: { link: string } };
+  groupOverview: { args: { link: string }; value: GroupOverview };
   http: { args: { link: string; req: HttpReq }; value: HttpResp };
   status: { args: { session: number }; value: SwarmStatus };
   parseLink: { args: { link: string }; value: LinkInfo };
@@ -502,3 +505,24 @@ export type ErrorCode =
   | 'invalid_module'
   | 'invalid_argument'
   | 'internal';
+
+/** A group seen from the keeper that coordinates it (`GET /overview`). No file name, command or link. */
+export interface GroupOverview {
+  group: string;
+  revision: number;
+  coordinator: string;
+  members: {
+    id: string;
+    name: string;
+    role: 'coordinates' | 'keeper' | 'member' | 'submits';
+    /** null for a key that only submits jobs. */
+    online: boolean | null;
+    slots: number | null;
+    working: number | null;
+    done: number | null;
+  }[];
+  jobs: { job: number; name: string; tasks: number; done: number; failed: number; state: 'running' | 'done'; results: boolean }[];
+  running: number;
+  files: number;
+  sites: { name: string | null; id: string }[];
+}

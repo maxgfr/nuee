@@ -1038,6 +1038,14 @@ impl NueeNode {
         future_to_promise(async move { resolve_name(node, link).await.map_err(js_err) })
     }
 
+    /// What a group looks like now (`G` link): its machines and which are on line, its jobs,
+    /// how many files it keeps and its sites, from the keeper that coordinates it.
+    #[wasm_bindgen(js_name = groupOverview)]
+    pub fn group_overview(&self, link: String) -> Promise {
+        let node = self.inner.clone();
+        future_to_promise(async move { group_overview(node, link).await.map_err(js_err) })
+    }
+
     /// Sends one console request over `nuee/http/0` to the host of an `X` link.
     pub fn http(&self, link: String, req: JsValue) -> Promise {
         let node = self.inner.clone();
@@ -1712,11 +1720,18 @@ fn headers_of(
     Ok(out)
 }
 
-async fn ask_keeper(node: &Node, link: &NameLink, keeper: &Provider) -> Result<String, WebError> {
+/// One `GET` to a keeper on `alpn`, proved with `secret`; the status and the JSON body.
+async fn keeper_get(
+    node: &Node,
+    keeper: &Provider,
+    alpn: &[u8],
+    secret: &[u8; 16],
+    path: &str,
+) -> Result<(u16, JsValue), WebError> {
     let request = HttpRequest {
-        proof: nuee_proto::proof(PROOF_HTTP, &link.public, &node.net.id(), &keeper.id),
+        proof: nuee_proto::proof(PROOF_HTTP, secret, &node.net.id(), &keeper.id),
         method: bounded("GET", "the method")?,
-        path: bounded(&format!("/names/{}", link.name.as_str()), "the path")?,
+        path: bounded(path, "the path")?,
         headers: BoundedVec::new(),
         body: BoundedBytes::default(),
     };
@@ -1727,7 +1742,7 @@ async fn ask_keeper(node: &Node, link: &NameLink, keeper: &Provider) -> Result<S
     }
     let conn = node
         .net
-        .connect(keeper.id, ALPN_NAME)
+        .connect(keeper.id, alpn)
         .await
         .map_err(|e| WebError::from(&e))?;
     let io = |e: &dyn std::fmt::Display| WebError::new(code::SWARM_ENDED, e.to_string());
@@ -1738,15 +1753,60 @@ async fn ask_keeper(node: &Node, link: &NameLink, keeper: &Provider) -> Result<S
     let resp: HttpResponse = decode_with_limit(&answer, MAX_HTTP_MSG)
         .map_err(|e| WebError::new(code::INTEGRITY, format!("malformed response: {e}")))?;
     conn.close(0u32.into(), b"done");
-    if resp.status != 200 {
+    let text = std::str::from_utf8(resp.body.as_slice()).unwrap_or_default();
+    let body = js_sys::JSON::parse(text)
+        .map_err(|_| WebError::new(code::INTEGRITY, "the keeper's answer is not JSON"))?;
+    Ok((resp.status, body))
+}
+
+async fn ask_keeper(node: &Node, link: &NameLink, keeper: &Provider) -> Result<String, WebError> {
+    let path = format!("/names/{}", link.name.as_str());
+    let (status, body) = keeper_get(node, keeper, ALPN_NAME, &link.public, &path).await?;
+    if status != 200 {
         return Err(WebError::new(code::SWARM_ENDED, "no site has this name"));
     }
-    let text = std::str::from_utf8(resp.body.as_slice()).unwrap_or_default();
-    js_sys::JSON::parse(text)
+    Reflect::get(&body, &"link".into())
         .ok()
-        .and_then(|body| Reflect::get(&body, &"link".into()).ok())
         .and_then(|link| link.as_string())
         .ok_or_else(|| WebError::new(code::INTEGRITY, "the keeper's answer has no link"))
+}
+
+/// How long one keeper has to answer for the overview.
+const OVERVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Only the keeper that coordinates answers; the others do not serve the group's API.
+async fn group_overview(node: Rc<Node>, link: String) -> Result<JsValue, WebError> {
+    let Link::Group(group) = Link::parse(&link)? else {
+        return Err(WebError::new(code::LINK_KIND, "not a group (G) link"));
+    };
+    let secret = group.admin_secret();
+    // A keeper that is off is not waited for: the page asks again a few seconds later.
+    let (node, secret) = (&*node, &secret);
+    let ask = |keeper| async move {
+        n0_future::time::timeout(
+            OVERVIEW_TIMEOUT,
+            keeper_get(node, keeper, ALPN_HTTP, secret, "/overview"),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            Err(WebError::new(
+                code::SWARM_ENDED,
+                "the keeper did not answer",
+            ))
+        })
+    };
+    let mut asks: FuturesUnordered<_> = group.bootstrap.iter().map(ask).collect();
+    let mut last = WebError::new(code::SWARM_ENDED, "the link lists no keeper");
+    while let Some(answer) = asks.next().await {
+        match answer {
+            Ok((200, body)) => return Ok(body),
+            Ok((status, _)) => {
+                last = WebError::new(code::SWARM_ENDED, format!("the keeper answered {status}"));
+            }
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
 }
 
 async fn resolve_name(node: Rc<Node>, link: String) -> Result<JsValue, WebError> {

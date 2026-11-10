@@ -268,6 +268,8 @@ async function handle(op, args, id) {
     // hosts (web/loader/nuee-loader.js): keep their names and shapes.
     case 'resolveName':
       return [await needNode().resolveName(/** @type {OpMap['resolveName']['args']} */ (args).link), []];
+    case 'groupOverview':
+      return [await needNode().groupOverview(/** @type {OpMap['groupOverview']['args']} */ (args).link), []];
     case 'http': {
       const a = /** @type {OpMap['http']['args']} */ (args);
       const r = await needNode().http(a.link, a.req ?? {});

@@ -27,9 +27,9 @@ use nuee_proto::limits::{MAX_INLINE_INPUT, MAX_WASM_MEMORY};
 use nuee_proto::link::DEFAULT_BASE;
 use nuee_proto::{
     ALPN_HTTP, ALPN_JOB, ALPN_NAME, Asset, BoundedBytes, BoundedString, BoundedVec, Caps,
-    Comparator, EndpointId, FailKind, GpuCaps, Hash, Header, HttpRequest, HttpResponse, JobLink,
-    Lease, Link, MAX_HTTP_MSG, Manifest, NameLink, PROOF_HTTP, PROTO_VERSION, Payload, Provider,
-    SecretKey, TaskKind, VerifyMode, VerifyPolicy, decode_with_limit,
+    Comparator, EndpointId, FailKind, GpuCaps, GroupLink, Hash, Header, HttpRequest, HttpResponse,
+    JobLink, Lease, Link, MAX_HTTP_MSG, Manifest, NameLink, PROOF_HTTP, PROTO_VERSION, Payload,
+    Provider, SecretKey, TaskKind, VerifyMode, VerifyPolicy, decode_with_limit,
 };
 use nuee_store::{HubConfig, ShareHandle, StoreHub, get_bytes, share_bytes};
 use tokio::sync::mpsc;
@@ -1440,10 +1440,11 @@ impl JoinSession {
 // Sites with a stable name, served by this tab.
 
 /// A site this tab serves under a stable name while the session lives: one endpoint serves the
-/// encrypted files, another answers what the name points to.
+/// encrypted files, another answers what the name points to and, as the group's only keeper,
+/// what the group looks like.
 #[wasm_bindgen]
 pub struct SiteSession {
-    inner: Rc<(Net, ShareHandle, Net, Router, String, String)>,
+    inner: Rc<(Net, ShareHandle, Net, Router, String, String, String)>,
 }
 
 /// Answers visitors of the name on `nuee/name/0`, as a group's keepers do.
@@ -1526,7 +1527,6 @@ async fn publish_site(
         return Err(WebError::internal("unexpected character in the site link"));
     }
     let names = bind(&node.relay).await?;
-    let public = nuee_proto::new_secret16().map_err(random_err)?;
     let relay = relay_of(&names);
     let keeper = Provider {
         id: names.id(),
@@ -1534,6 +1534,15 @@ async fn publish_site(
             .then(|| bounded(&relay, "the relay URL"))
             .transpose()?,
     };
+    // The tab plays a group whose only keeper is itself: the name and the group's page work as
+    // they do for a group of machines.
+    let group = GroupLink {
+        group: names.id(),
+        secret: nuee_proto::new_secret16().map_err(random_err)?,
+        bootstrap: BoundedVec::try_from(vec![keeper.clone()])
+            .map_err(|_| WebError::internal("one keeper"))?,
+    };
+    let public = group.public_secret();
     let link = Link::Name(NameLink {
         group: names.id(),
         public,
@@ -1549,9 +1558,25 @@ async fn publish_site(
         reply: format!(r#"{{"link":"{site}"}}"#),
         gate: Arc::new(Admission::new(AdmitConfig::default())),
     };
-    let router = names.router().accept(ALPN_NAME, server).spawn();
+    let me = names.id();
+    let overview = NameServer {
+        own: me,
+        secret: group.admin_secret(),
+        path: "/overview".to_owned(),
+        reply: format!(
+            r#"{{"group":"A group played by a browser tab","revision":1,"coordinator":"{me}","tab":true,"members":[{{"id":"{me}","name":"the publishing tab","role":"coordinates","online":true,"slots":null,"working":null,"done":null}}],"jobs":[],"running":0,"files":0,"sites":[{{"name":"{name}","id":"{hash}"}}]}}"#,
+            hash = handle.link.hash,
+        ),
+        gate: Arc::new(Admission::new(AdmitConfig::default())),
+    };
+    let router = names
+        .router()
+        .accept(ALPN_NAME, server)
+        .accept(ALPN_HTTP, overview)
+        .spawn();
+    let group = Link::Group(group).to_url(&node.base);
     Ok(SiteSession {
-        inner: Rc::new((net, handle, names, router, link, site)),
+        inner: Rc::new((net, handle, names, router, link, site, group)),
     }
     .into())
 }
@@ -1568,6 +1593,12 @@ impl SiteSession {
     #[wasm_bindgen(getter)]
     pub fn site(&self) -> String {
         self.inner.5.clone()
+    }
+
+    /// The `G` link of the group this tab plays: its page shows the group live.
+    #[wasm_bindgen(getter)]
+    pub fn group(&self) -> String {
+        self.inner.6.clone()
     }
 
     /// Stops serving the name and the files.

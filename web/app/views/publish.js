@@ -139,6 +139,7 @@ export function render({ app, root }) {
         panel.el,
         h('div', { class: 'row' }, open, loader),
         h('p', { class: 'muted', i18n: 'publish.loaderHint' }),
+        h('p', null, h('span', { i18n: 'publish.group' }), ' ', h('a', { href: res.group, target: '_blank', rel: 'noopener', i18n: 'publish.groupOpen' })),
         h('p', { class: 'muted' }, h('span', { i18n: 'publish.cli' }), ' ', h('a', { href: 'docs/#ex-name', i18n: 'publish.docs' })),
         errors.el,
         stopBtn,

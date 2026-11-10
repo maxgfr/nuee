@@ -80,6 +80,12 @@ test('a tab hosts the sample site under a name that the CLI, the page and the lo
   await expect(frame.locator('#where')).toContainText('scripts and links are off');
   await expect(frame.locator('#count')).toBeDisabled();
 
+  // The tab plays the group that keeps the site, and the group's page shows it live.
+  const group = await h.page(browser, 'group');
+  await group.goto(pageUrl(/** @type {string} */ (await tab.getByRole('link', { name: 'See the group live, as its members do' }).getAttribute('href'))));
+  await expect(group.getByRole('row', { name: /the publishing tab/ })).toContainText('On line', { timeout: 60_000 });
+  await expect(group.getByRole('note').filter({ hasText: 'A browser tab plays this group' })).toBeVisible();
+
   // The loader the page hands out serves it, script included, from another origin.
   const [saved] = await Promise.all([tab.waitForEvent('download'), tab.getByRole('button', { name: 'Download the loader' }).click()]);
   const files = path.join(dir, 'loader');

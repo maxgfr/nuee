@@ -55,6 +55,13 @@ updates:
       # style of <select>'s own shadow tree, so every page with a <select> logs a CSP violation.
       - dependency-name: '@playwright/test'
         versions: ['1.64.x']
+  # The example app a group builds in the docs: its build has to keep working.
+  - package-ecosystem: npm
+    directory: /examples/app
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:

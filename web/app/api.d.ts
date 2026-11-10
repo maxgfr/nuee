@@ -388,7 +388,7 @@ export interface OpMap {
   /** Join session: its data channel closed. */
   laneClosed: { args: { session: number }; value: null };
   share: { args: { files: NamedBytes[] }; value: { session: number; link: string } };
-  publishSite: { args: { files: NamedBytes[]; name: string }; value: { session: number; link: string; site: string } };
+  publishSite: { args: { files: NamedBytes[]; name: string }; value: { session: number; link: string; site: string; group: string } };
   fetchFile: { args: { link: string; progress?: number }; value: FetchedFiles };
   fetchSite: { args: { link: string; progress?: number }; value: FetchedFiles };
   resolveName: { args: { link: string }; value: { link: string } };
@@ -525,4 +525,6 @@ export interface GroupOverview {
   running: number;
   files: number;
   sites: { name: string | null; id: string }[];
+  /** A group played by a browser tab, for the demo of #/publish. */
+  tab?: boolean;
 }

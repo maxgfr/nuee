@@ -9,3 +9,4 @@ fuzz/artifacts/
 fuzz/coverage/
 .impeccable/
 .DS_Store
+examples/app/dist/

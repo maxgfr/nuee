@@ -8,13 +8,16 @@ import { t } from '../i18n.js';
 import { errorArea, fingerprintBlock } from '../lib/ui.js';
 import { fmtNumber } from '../lib/format.js';
 
-const BUILD = 'npm ci && npm run build';
+/** The example app of the Nuée repository: a real `npm ci && npm run build`, with esbuild. */
+const REPO = 'https://github.com/maxgfr/nuee.git';
+const BUILD = 'cd examples/app && npm ci && npm run build';
 
 /** Each step, in the order a newcomer needs them. `-` makes the command ask for the link. */
 const STEPS = [
   ['link.group.join', 'nuee id'],
-  ['link.group.up', `nuee group up - --allow-repo https://github.com/you/app.git --allow-command '${BUILD}' --exec-network`],
-  ['link.group.build', `nuee build --on - --keep dist -- '${BUILD}'`],
+  ['link.group.up', `nuee group up - --allow-repo ${REPO} --allow-command '${BUILD}' --exec-network`],
+  ['link.group.clone', 'git clone https://github.com/maxgfr/nuee.git && cd nuee'],
+  ['link.group.build', `nuee build --on - --keep examples/app/dist -- '${BUILD}'`],
 ];
 
 /** How often the page asks again, while it is open. */
@@ -41,7 +44,21 @@ export function render({ app, root, route }) {
         errors.showKey('err.link_kind');
         return;
       }
-      const live = liveStatus();
+      const takePart = h(
+        'div',
+        null,
+        h('h2', { i18n: 'link.group.take' }),
+        h(
+          'ol',
+          { class: 'group-steps' },
+          STEPS.map(([key, command]) =>
+            h('li', null, h('p', { i18n: key }), h('div', { class: 'row' }, h('code', { class: 'mono cmd', text: command }), copyButton(() => command))),
+          ),
+        ),
+        h('p', null, h('a', { href: 'docs/#ex-try', i18n: 'link.group.docs' })),
+      );
+      // A group played by a browser tab cannot be joined: it only shows what a group looks like.
+      const live = liveStatus(() => takePart.replaceChildren(h('p', { class: 'notice', role: 'note', i18n: 'link.group.tab' }), h('p', null, h('a', { href: 'docs/#groups', i18n: 'link.group.tabDocs' }))));
       page.append(
         live.el,
         h(
@@ -50,15 +67,7 @@ export function render({ app, root, route }) {
           fingerprintBlock(info.fingerprint, 'link.group.fingerprint'),
           h('p', { i18n: `link.${kind}.body` }),
           h('div', { class: 'row' }, copyButton(() => location.href, 'link.group.copy')),
-          h('h2', { i18n: 'link.group.take' }),
-          h(
-            'ol',
-            { class: 'group-steps' },
-            STEPS.map(([key, command]) =>
-              h('li', null, h('p', { i18n: key }), h('div', { class: 'row' }, h('code', { class: 'mono cmd', text: command }), copyButton(() => command))),
-            ),
-          ),
-          h('p', null, h('a', { href: 'docs/#ex-try', i18n: 'link.group.docs' })),
+          takePart,
         ),
       );
       const ask = () => {
@@ -85,8 +94,9 @@ export function render({ app, root, route }) {
   };
 }
 
-/** The section that shows the group now, filled by each answer. */
-function liveStatus() {
+/** The section that shows the group now, filled by each answer. @param {() => void} onTab */
+function liveStatus(onTab) {
+  let tab = false;
   const summary = h('p', { class: 'muted', role: 'status', i18n: 'link.group.asking' });
   const body = h('div');
   const updated = h('p', { class: 'muted' });
@@ -94,6 +104,10 @@ function liveStatus() {
 
   /** @param {GroupOverview} o */
   const show = (o) => {
+    if (o.tab && !tab) {
+      tab = true;
+      onTab();
+    }
     const workers = o.members.filter((m) => m.online !== null);
     const online = workers.filter((m) => m.online).length;
     setText(summary, 'link.group.summary', {

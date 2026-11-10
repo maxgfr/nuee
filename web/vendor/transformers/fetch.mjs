@@ -48,14 +48,31 @@ function untar(tar, wanted) {
   return out;
 }
 
+/** Attempts at a tarball before giving up: the registry sometimes drops a connection. */
+const ATTEMPTS = 5;
+
+/** The tarball's bytes; a dropped connection or a server error is tried again. */
+async function download(url) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const res = await fetch(url, { redirect: 'error' });
+      if (res.ok) return Buffer.from(await res.arrayBuffer());
+      // A client error will not change on a second try.
+      if (res.status < 500 || attempt === ATTEMPTS) throw new Error(`${url}: HTTP ${res.status}`);
+    } catch (err) {
+      if (attempt === ATTEMPTS || /HTTP 4\d\d/.test(String(err?.message))) throw err;
+      console.warn(`vendor: ${url}: ${err?.cause?.message ?? err?.message}; trying again`);
+    }
+    await new Promise((done) => setTimeout(done, 2_000 * attempt));
+  }
+}
+
 for (const pkg of vendor.packages) {
   const missing = [];
   for (const file of pkg.files) if (!(await present(file))) missing.push(file);
   if (missing.length === 0) continue;
 
-  const res = await fetch(pkg.tarball, { redirect: 'error' });
-  if (!res.ok) throw new Error(`${pkg.tarball}: HTTP ${res.status}`);
-  const tgz = Buffer.from(await res.arrayBuffer());
+  const tgz = await download(pkg.tarball);
   const [algo, expected] = pkg.integrity.split('-');
   const got = createHash(algo).update(tgz).digest('base64');
   if (got !== expected) throw new Error(`${pkg.name}@${pkg.version}: integrity mismatch`);

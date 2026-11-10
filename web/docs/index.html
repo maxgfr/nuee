@@ -203,6 +203,15 @@ error: 1 of 4 shards failed; logs in nuee-out/shard-3f2a91c07b1d</code></pre>
 <pre class="command"><code>nuee build --on - --keep dist -- 'npm ci &amp;&amp; npm run build'</code></pre>
 <pre class="output"><code>build passed: 12 files in .</code></pre>
 <p><code>dist/</code> and <code>nuee-build.log</code> come back to you. A teammate who builds the same commit gets that result in about a second. The build runs in a sandbox: an install script that goes for <code>~/.ssh</code> finds nothing. It does not make the code safe, so read <a href="#groups">Permanent groups</a> first.</p>
+<p>To try it alone on a real build, with Node.js installed: Nuée’s repository holds a small app bundled with esbuild, in <code>examples/app</code>. Start a group whose machine allows exactly its build:</p>
+<pre class="command"><code>nuee group create builders
+nuee group up - --allow-repo https://github.com/maxgfr/nuee.git --allow-command 'cd examples/app &amp;&amp; npm ci &amp;&amp; npm run build' --exec-network</code></pre>
+<p>In another terminal, get the repository:</p>
+<pre class="command"><code>git clone https://github.com/maxgfr/nuee.git</code></pre>
+<p>Then, inside it, build on the group:</p>
+<pre class="command"><code>nuee build --on - --keep examples/app/dist -- 'cd examples/app &amp;&amp; npm ci &amp;&amp; npm run build'</code></pre>
+<pre class="output"><code>build passed: 4 files in .</code></pre>
+<p><code>examples/app/dist/build.json</code> names the commit it was built from, the machine’s platform and its Node.js version. Run the same command again and the result comes back in about a second.</p>
 
 <h3 id="ex-ci"><a href="#ex-ci">Use your machines from GitHub Actions</a></h3>
 <p><strong>You need:</strong> the same group, and two repository secrets. On the machine that created the group, make a key that can only submit jobs:</p>

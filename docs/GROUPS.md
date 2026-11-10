@@ -137,6 +137,23 @@ One machine builds the commit, and `dist/` and `nuee-build.log` come back here. 
 same commit with the same command then gets that result in a second, without building again. A
 failing build is a result too: its log comes back and the command exits with an error.
 
+To try it on a real build, this repository holds a small app bundled with esbuild in
+`examples/app`. On one machine, start a group that allows exactly its build:
+
+```sh
+nuee group create builders
+nuee group up - --allow-repo https://github.com/maxgfr/nuee.git \
+  --allow-command 'cd examples/app && npm ci && npm run build' --exec-network
+```
+
+Then, from a clone of this repository, in another terminal:
+
+```sh
+nuee build --on - --keep examples/app/dist -- 'cd examples/app && npm ci && npm run build'
+```
+
+`examples/app/dist/build.json` names the commit, the platform and the Node.js version that built it.
+
 For a private repository, give the machines a read-only token with
 `--git-token-file token.txt`. It is used to fetch the repository and never reaches the command.
 

@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         # Groups of scripts/check.sh, side by side; together they are every stage of the gate.
-        stage: [static, test, e2e-1, e2e-2, fuzz]
+        stage: [static, test, e2e-1, e2e-2, e2e-3, fuzz]
         os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
     # Far below the 6-hour job limit; the e2e suite stops itself after 45 minutes.
@@ -52,9 +52,13 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
+      # Rebuilding the manual page index after every package is most of an apt install's time.
+      - name: Skip the manual page index in apt installs
+        if: runner.os == 'Linux'
+        run: sudo rm -f /var/lib/man-db/auto-update
       - name: Install the Vulkan software driver (lavapipe) and bubblewrap for the exec sandbox tests
         if: runner.os == 'Linux' && (matrix.stage == 'test' || startsWith(matrix.stage, 'e2e'))
-        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers bubblewrap
       # Ubuntu 24.04 blocks unprivileged user namespaces through AppArmor; bwrap needs them.
       - name: Allow unprivileged user namespaces for bwrap
         if: runner.os == 'Linux' && (matrix.stage == 'test' || startsWith(matrix.stage, 'e2e'))
@@ -104,8 +108,17 @@ jobs:
       - run: wasm-opt --version
       - run: npm ci --prefix e2e --ignore-scripts --no-audit --no-fund
         if: startsWith(matrix.stage, 'e2e')
-      - run: npx --prefix e2e playwright install --with-deps chromium firefox webkit
+      # The browsers are kept between runs; their system libraries are installed each time.
+      - id: browsers
         if: startsWith(matrix.stage, 'e2e')
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.os == 'macOS' && '~/Library/Caches/ms-playwright' || '~/.cache/ms-playwright' }}
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/package-lock.json') }}
+      - run: npx --prefix e2e playwright install --with-deps chromium firefox webkit
+        if: startsWith(matrix.stage, 'e2e') && steps.browsers.outputs.cache-hit != 'true'
+      - run: npx --prefix e2e playwright install-deps chromium firefox webkit
+        if: startsWith(matrix.stage, 'e2e') && steps.browsers.outputs.cache-hit == 'true'
       - run: scripts/check.sh ${{ matrix.stage }}
   # The Action as a workflow really runs it, on a group that lives on this runner and needs no
   # repository secret. Only the network between the machines differs from a team's own group.
@@ -125,7 +138,8 @@ jobs:
         with:
           key: build
           save-if: false
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: sudo rm -f /var/lib/man-db/auto-update
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: scripts/build-tasks.sh && cargo build --locked -p nuee
       - id: group

@@ -361,7 +361,7 @@ Every build embeds the mandelbrot and toy-trainer modules and the optdigits data
 it with `cargo build --release -p nuee --features embed-tasks` after `scripts/build-tasks.sh`;
 without the feature, nuee looks for `target/tasks/skycmd-arena.wasm` in the checkout.
 
-`scripts/check.sh` takes a group (`static`, `test`, `e2e-1`, `e2e-2`, `fuzz`), as CI does to run
+`scripts/check.sh` takes a group (`static`, `test`, `e2e-1`, `e2e-2`, `e2e-3`, `fuzz`), as CI does to run
 them side by side. Without one it runs, in order: `cargo fmt --check`; clippy with `-D warnings` on the
 workspace and on the wasm32 crates; the task build; `cargo test`; `cargo deny` and
 `cargo audit`; clippy on `tasks/`; the web build; `node --test web/test/`; the end-to-end

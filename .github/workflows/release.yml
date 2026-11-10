@@ -15,8 +15,10 @@ jobs:
   verify:
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/ci.yml
+  # The version, the task modules and the binaries are built while verify runs: only
+  # publish waits for it, so a release takes as long as the slower of the two.
   version:
-    needs: verify
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     # semantic-release checks push access with `git push --dry-run`, even in --dry-run.
     permissions:
@@ -68,7 +70,8 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: macos-15
             target: aarch64-apple-darwin
-          - os: macos-15-intel
+          # Built on Apple silicon: Intel runners are few and slow to start.
+          - os: macos-15
             target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
     env:
@@ -102,6 +105,9 @@ jobs:
             echo "binary requires glibc $required, above 2.35" >&2
             exit 1
           fi
+      - name: Run Intel binaries on Apple silicon through Rosetta
+        if: matrix.target == 'x86_64-apple-darwin' && runner.arch == 'ARM64'
+        run: softwareupdate --install-rosetta --agree-to-license
       - run: "\"target/$TARGET/release/nuee\" --version"
       - run: "\"target/$TARGET/release/nuee\" selftest"
       - name: Stage the binary
@@ -114,7 +120,7 @@ jobs:
           path: dist/nuee-${{ matrix.target }}
           if-no-files-found: error
   publish:
-    needs: [version, binary]
+    needs: [verify, version, binary]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

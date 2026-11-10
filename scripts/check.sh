@@ -2,7 +2,7 @@
 # The repository gate: formatting, lints, tests, supply chain, builds and end-to-end tests.
 # Stops at the first failing stage and names it. Without an argument it runs everything, in
 # order. CI runs the groups side by side; together they are every stage.
-# Usage: scripts/check.sh [static|test|e2e-1|e2e-2|fuzz]
+# Usage: scripts/check.sh [static|test|e2e-1|e2e-2|e2e-3|fuzz]
 # (NUEE_E2E_GPU=1 is passed through to the e2e stage)
 set -euo pipefail
 
@@ -10,7 +10,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 usage() {
-  echo "usage: scripts/check.sh [static|test|e2e-1|e2e-2|fuzz]" >&2
+  echo "usage: scripts/check.sh [static|test|e2e-1|e2e-2|e2e-3|fuzz]" >&2
   exit 2
 }
 
@@ -19,12 +19,12 @@ if [ "$#" -gt 1 ]; then
 fi
 
 group="${1:-all}"
-# The end-to-end suite is cut in two for two machines, each still running one test at a time.
+# The end-to-end suite is cut in three for three machines, each still running one test at a time.
 e2e_args=()
 case "$group" in
   all | static | test | fuzz) ;;
-  e2e-1 | e2e-2)
-    e2e_args=("--shard=${group#e2e-}/2")
+  e2e-1 | e2e-2 | e2e-3)
+    e2e_args=("--shard=${group#e2e-}/3")
     group=e2e
     ;;
   *) usage ;;

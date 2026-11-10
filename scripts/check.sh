@@ -19,12 +19,17 @@ if [ "$#" -gt 1 ]; then
 fi
 
 group="${1:-all}"
-# The end-to-end suite is cut in three for three machines, each still running one test at a time.
+# The end-to-end suite is cut in three for three machines, each still running one test at a time:
+# the cross-browser tests in two halves, and the accessibility checks, many but short, apart.
 e2e_args=()
 case "$group" in
   all | static | test | fuzz) ;;
-  e2e-1 | e2e-2 | e2e-3)
-    e2e_args=("--shard=${group#e2e-}/3")
+  e2e-1 | e2e-2)
+    e2e_args=(--project=cross "--shard=${group#e2e-}/2")
+    group=e2e
+    ;;
+  e2e-3)
+    e2e_args=(--project=a11y-chromium --project=a11y-firefox --project=a11y-webkit)
     group=e2e
     ;;
   *) usage ;;

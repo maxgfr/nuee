@@ -14,7 +14,9 @@ export default defineConfig({
   globalSetup: './setup.mjs',
   // One test at a time: each one already starts several browsers and CLI processes.
   workers: 1,
-  fullyParallel: false,
+  // Still one at a time, but `--shard` then cuts the suite test by test rather than file by file,
+  // so that the machines of CI get as much work each.
+  fullyParallel: true,
   retries: 0,
   forbidOnly: true,
   reporter: 'list',

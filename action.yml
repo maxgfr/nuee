@@ -30,7 +30,7 @@ inputs:
     required: false
     default: '3600'
   version:
-    description: The Nuée release to use, such as v0.6.0. Empty means the release this action is pinned to, or the latest.
+    description: The Nuée release to use, such as v0.7.2. Empty means the release this action is pinned to, or the latest.
     required: false
     default: ''
 outputs:

@@ -1,7 +1,9 @@
 # Nuée
 
 Share a link, get a swarm. Nuée turns the laptops and phones of a group that trusts each other
-into a private, short-lived compute and file cluster. No server of ours, no account, no payment.
+into a private compute and file cluster: for one job, or as a permanent group that is its own
+server, running its builds and tests, keeping its files and serving its sites, and still there
+when any one machine is off. No server of ours, no account, no payment.
 
 ```sh
 brew install maxgfr/tap/nuee
@@ -35,7 +37,7 @@ A machine only runs a command written exactly as one it allows. On Linux, `group
 Or from a workflow, with the Action in this repository:
 
 ```yaml
-- uses: maxgfr/nuee@v0.6.0
+- uses: maxgfr/nuee@v0.7.2
   with:
     group: ${{ secrets.NUEE_GROUP }}
     key: ${{ secrets.NUEE_KEY }}
@@ -61,6 +63,10 @@ nuee site loader - -o deploy/                    # three files for GitHub Pages 
 The loader serves the site, scripts and pages included, from the static host's own address: the
 content comes from the group and is checked against its hash, and a returning visitor keeps it
 with every machine off. The group also works from Python and coding agents (`nuee mcp`).
+
+To see it with nothing installed, [host the sample site from a tab](https://maxgfr.github.io/nuee/#/publish):
+the tab plays the group, gives a stable link and the loader for it. Its preview runs no script;
+the loader runs the site whole.
 
 More recipes, each run as written: [real examples](https://maxgfr.github.io/nuee/docs/#examples).
 
@@ -289,6 +295,14 @@ Details: [SECURITY.md](SECURITY.md) (reporting, scope) and
   recomputation, or from `--approve`.
 - **Mobile tabs stop in the background.** Keep the screen on while contributing.
 - **No Windows binary.** Windows machines join through the browser.
+- **Groups keep files and static sites, not databases.** A site with a server side runs on one
+  machine through `nuee expose`, and stops with it.
+- **A first visit to a group's site needs one of its keepers online**, and a relay. Returning
+  visitors of the loader do not.
+- **Keepers are trusted.** They can read what the group keeps and change what a name shows.
+  Members are trusted too: one submission can bring up to 1 GiB of inputs, which a keeper holds in memory.
+- **A takeover is not instant.** A keeper waits about 10 seconds per keeper ranked before it;
+  a site or file sent to the group in that gap may be missed, so send it again.
 - Nuée is for groups that trust each other enough to share a link. It is not an open market.
 
 ## How it compares
@@ -300,6 +314,9 @@ Details: [SECURITY.md](SECURITY.md) (reporting, scope) and
 | Mesh LLM | Pooling machines to serve a large language model, built on iroh | Nuée runs verified batch jobs and shares files; it does not split a model across peers |
 | Buzz (Block) | A peer-to-peer application built on iroh | Nuée is a compute and file swarm joined from a link or a browser tab |
 | BOINC | Volunteer computing for research projects, run from a project server | Nuée needs no server: the coordinator is a laptop or a web page, joined from a link |
+| Self-hosted CI runners | One of your machines takes whole jobs from GitHub or GitLab | `nuee shard` cuts one suite across several machines, from any CI or a terminal, and a teammate who builds the same commit gets the result back |
+| Syncthing | Keeps folders in sync between your own devices | A group keeps copies on its keepers and gives a link that a browser opens with nothing installed |
+| GitHub Pages, Netlify | Host a static site on their servers, free | The site comes from your machines under a link that stays the same; the loader can sit on Pages |
 
 ## Exit codes
 

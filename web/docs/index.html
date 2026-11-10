@@ -59,6 +59,7 @@
 <h2 id="what"><a href="#what">What Nuée is</a></h2>
 <p>Someone launches a job, from the <code>nuee</code> command line or from the web page, and gets a link and a QR code. Everyone who opens the link joins the swarm: a browser tab lends a few cores, a <code>nuee join</code> lends a whole machine. The job is cut into tasks, the tasks are handed out, the results come back and are checked. The same links also carry encrypted files, exposed services and static sites.</p>
 <p><strong>The link is the cluster.</strong> It holds the coordinator’s public key, the relay to reach it, and a 16-byte secret. Opening it is the admission; there is no account, no sign-up and no server of ours in the middle.</p>
+<p>Machines that stay together can also form a <a href="#groups">permanent group</a>: its link stays valid while machines come and go, and the group is its own server. It runs its builds and test suites across its machines, keeps its files and serves its sites, and another keeper takes over when the coordinating machine goes away.</p>
 <p>It is meant for a group that already trusts itself: a talk or workshop where the audience joins from their phones, a class, a lab or a team with a few Macs and Linux boxes. Typical work is batch work that splits into independent tasks: fractals and simulations, evaluating a small model, sentence embeddings, sweeps, training small models, and handing files around.</p>
 <p>What it is not:</p>
 <ul>
@@ -207,7 +208,7 @@ error: 1 of 4 shards failed; logs in nuee-out/shard-3f2a91c07b1d</code></pre>
 <p><strong>You need:</strong> the same group, and two repository secrets. On the machine that created the group, make a key that can only submit jobs:</p>
 <pre class="command"><code>nuee group ci-key - --name github</code></pre>
 <p>Store it as <code>NUEE_KEY</code> and the group link as <code>NUEE_GROUP</code>, then add the step to a workflow. The hosted runner only waits, so the cheapest one will do:</p>
-<pre class="output"><code>- uses: maxgfr/nuee@v0.6.0
+<pre class="output"><code>- uses: maxgfr/nuee@v0.7.2
   with:
     group: ${{ secrets.NUEE_GROUP }}
     key: ${{ secrets.NUEE_KEY }}
@@ -673,6 +674,10 @@ done: 16 tasks, results in nuee-out/skycmd/results.json</code></pre>
   <li>The web page keeps files in memory: 256 MiB at most to share or download.</li>
   <li>Native trainers are not recomputed; GPU, embedding and LLM results are compared within tolerances.</li>
   <li>There is no Windows binary; Windows machines join through the browser.</li>
+  <li>A group keeps files and static sites, not databases. A site with a server side runs on one machine through <code>nuee expose</code>.</li>
+  <li>A first visit to a group’s site needs one of its keepers online, and a relay. The site preview on this page runs no script and follows no link; the loader runs the site whole.</li>
+  <li>Keepers can read what the group keeps and change what a name shows. Members are trusted too: one submission can bring up to 1 GiB of inputs, which a keeper holds in memory.</li>
+  <li>A takeover waits about 10 seconds per keeper ranked before the one taking over; a site or file sent to the group in that gap may be missed.</li>
   <li>Nuée is for groups that trust each other enough to share a link. It is not an open market.</li>
 </ul>
 </section>

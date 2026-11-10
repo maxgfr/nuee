@@ -478,7 +478,7 @@ Mitigations:
   checkout; the machine that receives them refuses a path leaving its directory and creates no
   links. *`nuee-exec::RepoRule::matches`, `kept_path_ok`, `join::native_runner`, `build::unpack`.*
 - A CI key (`group ci-key`) is a member with no work: it cannot join the swarm, and on the API only
-  submits and reads jobs, and reads `GET /status` and `GET /roster`; it can never coordinate. It is revoked by removing it from the roster. The Action refuses
+  submits and reads jobs, and reads `GET /status`, `GET /roster` and `GET /overview`; it can never coordinate. It is revoked by removing it from the roster. The Action refuses
   `pull_request_target`, which would run a fork's code next to the key. *`submitter_may`,
   `scripts/action.sh`.*
 - A keeper takes over only when no keeper answers, and members only follow keepers named by a
@@ -504,7 +504,11 @@ sandbox, with the accepted risks of 4.2, and on the network with `--exec-network
 results are not recomputed, so a member can report a false pass or hand back a tampered build:
 do not publish a build's output as a release without checking it. Losing the group key freezes the
 roster, and whoever obtains it controls the group. The link's secret is still a bearer secret for
-`GET /roster`, which shows members' ids and names.
+`GET /roster`, which shows members' ids and names, and for `GET /overview`, which adds which
+machines are on line, their slots and progress, the names and progress of the last 20 jobs, the
+number of files kept and the names of the sites; never a file name, command, manifest or link
+(*`overview_of`*). `group host` writes the new keeper's key into its install files, which are as
+secret as that key until deleted.
 
 ## 5. Release rule
 

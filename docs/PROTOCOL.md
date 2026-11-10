@@ -344,14 +344,19 @@ in that order waits `p × 10 s`, asks again and takes over if still nobody answe
 keeps its role when an earlier keeper returns; if two ever coordinate, the later one in the order
 stops once its jobs are done. Clients submit again to the new coordinator.
 
-The coordinating keeper serves its anchor API (5.3) with three more routes. `GET /roster` returns
+The coordinating keeper serves its anchor API (5.3) with four more routes. `GET /roster` returns
 `{roster: hex(postcard(SignedRoster))}` and `POST /roster` takes the same body; both are open to
-any holder of the link, the second because the signature decides. `POST /delegate`
+any holder of the link, the second because the signature decides. `GET /overview`, also open to
+any holder of the link, returns `{group, revision, coordinator, members: [{id, name, role, online,
+slots, working, done}], jobs: [summary], running, files, sites: [{name, id}]}`: `role` is
+`coordinates`, `keeper`, `member` or `submits`; `online` is null for a member that does no work;
+`slots`, `working` and `done` are null unless the member is connected to the swarm; `jobs` lists
+the newest 20 job summaries (5.3) and `files` counts the drive. `POST /delegate`
 `{member, sig: hex(postcard(Signature))}` lets the calling key act for `member`, a machine on the
 roster, which signed `nuee/delegate/0 || caller`. Delegations end when the roster changes. Every
 other route needs a caller on the roster or delegated by one. A member with `worker: false`, and
-any key it delegates, is not admitted to the swarm and only reaches `/jobs...`, `GET /status` and
-`GET /roster`.
+any key it delegates, is not admitted to the swarm and only reaches `/jobs...`, `GET /status`,
+`GET /roster` and `GET /overview`.
 
 `POST /drive {link, name}` makes the coordinator keep the ciphertext of an `F` link and
 `DELETE /drive/<id or name>` drops it. `GET /drive` returns `{files: [{id, name, link}],

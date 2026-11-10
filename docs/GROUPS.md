@@ -35,8 +35,46 @@ nuee group up -
 nuee group up - --only-when ac,idle    # only take work on mains power, when not busy
 ```
 
-`nuee group status -` lists the machines. `nuee group remove - <id>` takes one out at once, and
-`nuee group handoff - <id>` moves the coordinator role, once no job is running.
+`nuee group remove - <id>` takes a machine out at once, and `nuee group handoff - <id>` moves the
+coordinator role, once no job is running.
+
+## See what the group is doing
+
+```sh
+nuee group status -            # machines on line, recent jobs, files kept, sites
+nuee group status - --watch    # the same, again every 5 seconds
+nuee group status - --check    # exit code 3 when no keeper coordinates: for a monitoring check
+```
+
+Opening the group's link in the web page shows the same, refreshed every 10 seconds while the page is
+open: each machine with its role, whether it is on line, its slots and what it is working on, the
+latest jobs with their progress, how many files the group keeps and the names of its sites. The
+page asks the keepers that the link names, so print the link again after adding keepers.
+
+Anyone holding the link sees this view, as they could already read the roster. It holds no file
+name, no command and no link: a job shows the name its client gave it, such as `shard-3-of-8` or `build`.
+A machine that stops without leaving shows as on line until its connection times out, for up to
+about 30 seconds.
+
+## An always-on server
+
+A group of laptops is off at night. A small Linux server that stays on keeps the group's files and
+sites reachable and coordinates when the laptops are away. On the machine that created the group:
+
+```sh
+nuee group host - --name server -o nuee-server
+```
+
+This adds a keeper to the roster with a key made for it, and writes three files: `install.sh`,
+`cloud-init.yaml` and `README.txt`. Paste `cloud-init.yaml` as the user data of a new server at any
+host (Ubuntu 22.04 or later, Debian 12 or later, x86_64 or arm64), or run `sh install.sh` as root on
+a server you have. The script downloads the release, checks it against its published SHA-256 sum,
+creates a `nuee` system user and starts `nuee group up` as a hardened systemd service that comes
+back after a reboot. The server needs no open port.
+
+Both files hold the server's key: keep them as secret as a password and delete them once the
+server runs. `nuee group remove - <id>` revokes the server. It is a keeper like any other: it
+can read what the group keeps, so run it on a machine you control.
 
 ## When a machine dies
 
@@ -212,5 +250,7 @@ machine's `--allow-command`.
 - Every machine on the roster can use the coordinator's whole API: jobs, sites and services.
 - `--only-when idle` is checked before taking work, not during it: the work itself makes the
   machine busy.
-- Browsers cannot join a group yet. Opening a `G` link in the page says so; they can only visit
-  its named sites.
+- Browsers cannot join a group yet. The page of a `G` link shows what the group is doing and how
+  to take part; browsers can visit its named sites.
+- The page and `group status` find the coordinator through the keepers the link names. A link
+  printed before a takeover to a keeper it does not list finds nobody.

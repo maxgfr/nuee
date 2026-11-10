@@ -223,6 +223,11 @@ nuee group ls -
 nuee group get - photos -o ./back</code></pre>
 <p>The keepers copy the files, encrypted as you sent them, and you can turn your machine off. If the machine that coordinates dies, another keeper takes over with its copy. Keepers can decrypt what they keep.</p>
 
+<h3 id="ex-server"><a href="#ex-server">Keep the group on line with a small server</a></h3>
+<p><strong>You need:</strong> the machine that created the group, and a Linux server at any host (Ubuntu 22.04 or later, Debian 12 or later).</p>
+<pre class="command"><code>nuee group host - --name server -o nuee-server</code></pre>
+<p>The server is now a keeper on the roster. Paste <code>nuee-server/cloud-init.yaml</code> as the user data when you create it, or run <code>sh install.sh</code> as root on a server you have: it downloads the release, checks its SHA-256 sum and runs <code>nuee group up</code> as a hardened systemd service. No port needs to be open. Both files hold the server’s key: delete them once it runs, and <code>nuee group remove</code> revokes it.</p>
+
 <h3 id="ex-name"><a href="#ex-name">Host a site on your group, from any static host</a></h3>
 <p><strong>You need:</strong> a group with a machine running <code>nuee group up</code>, two keepers if the site must survive one of them, and a folder with an <code>index.html</code>.</p>
 <pre class="command"><code>nuee site publish ./public --on - --name blog</code></pre>
@@ -459,6 +464,10 @@ tunnelling to the exposed service until Ctrl-C</code></pre>
 nuee group invite - 5b4e4a16f96e1dcf… --name alice-laptop --keeper
 nuee group up -</code></pre>
 <p>Every machine runs <code>nuee group up</code> and either coordinates or joins the one that does. <code>nuee group handoff</code> moves the coordinator role, <code>nuee group remove</code> takes a machine out, and <code>--only-when ac,idle</code> keeps a laptop from working on battery or while busy.</p>
+<p>To see the group, open its link in this page: it shows each machine with its role and whether it is on line, the latest jobs with their progress, how many files the group keeps and its sites, refreshed every 10 seconds. The command line shows the same, and can watch it or serve as a monitoring check:</p>
+<pre class="command"><code>nuee group status - --watch
+nuee group status - --check</code></pre>
+<p>Anyone holding the link sees this view, never a file name, command or link. A machine that stops without leaving shows as on line for up to about 30 seconds.</p>
 <p>A group can run your test suite between its machines. Each machine says exactly what it accepts, then anyone on the roster submits from a checkout whose commit is pushed:</p>
 <pre class="command"><code>nuee group up - --allow-repo https://github.com/acme/app.git --allow-command 'npm test -- --shard={i}/{n}'
 nuee shard 8 --on - -- 'npm test -- --shard={i}/{n}'</code></pre>
@@ -678,6 +687,7 @@ done: 16 tasks, results in nuee-out/skycmd/results.json</code></pre>
   <li>A first visit to a group’s site needs one of its keepers online, and a relay. The site preview on this page runs no script and follows no link; the loader runs the site whole.</li>
   <li>Keepers can read what the group keeps and change what a name shows. Members are trusted too: one submission can bring up to 1 GiB of inputs, which a keeper holds in memory.</li>
   <li>A takeover waits about 10 seconds per keeper ranked before the one taking over; a site or file sent to the group in that gap may be missed.</li>
+  <li>Whoever holds a group’s link sees its activity: machine names, which are on line, job names and progress, how many files and which sites.</li>
   <li>Nuée is for groups that trust each other enough to share a link. It is not an open market.</li>
 </ul>
 </section>

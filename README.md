@@ -45,6 +45,10 @@ Or from a workflow, with the Action in this repository:
     keep: dist
 ```
 
+`nuee group status - --watch` shows which machines are on line and the jobs as they run, and the
+page of the group's link shows the same in a browser. `nuee group host - -o nuee-server` adds an
+always-on keeper and writes a cloud-init file to paste when creating a Linux server at any host.
+
 See [docs/GROUPS.md](docs/GROUPS.md), including what allowing a repository means. To try it alone
 in two minutes on this repository's own tests, follow
 [this recipe](https://maxgfr.github.io/nuee/docs/#ex-try).
@@ -119,7 +123,9 @@ More recipes, each run as written: [real examples](https://maxgfr.github.io/nuee
   roster signed by the group's own key. When the coordinating keeper dies, the next one takes
   over with its copy of the files and sites. `nuee build` and `nuee shard` run builds and test
   suites across the machines in a sandbox, also from the GitHub Action, and `nuee site publish
-  --name` gives a site a stable link. See [docs/GROUPS.md](docs/GROUPS.md).
+  --name` gives a site a stable link. `group status` and the page of the link show the machines
+  on line and the jobs; `group host` sets up an always-on server. See
+  [docs/GROUPS.md](docs/GROUPS.md).
 - **Interrupted runs resume.** Outputs already in the output directory are kept; run the same
   command again.
 
@@ -299,6 +305,8 @@ Details: [SECURITY.md](SECURITY.md) (reporting, scope) and
   machine through `nuee expose`, and stops with it.
 - **A first visit to a group's site needs one of its keepers online**, and a relay. Returning
   visitors of the loader do not.
+- **Whoever holds a group's link sees its activity**: machine names, which are on line, job names
+  and progress, how many files and which sites. Not the files, commands or links.
 - **Keepers are trusted.** They can read what the group keeps and change what a name shows.
   Members are trusted too: one submission can bring up to 1 GiB of inputs, which a keeper holds in memory.
 - **A takeover is not instant.** A keeper waits about 10 seconds per keeper ranked before it;

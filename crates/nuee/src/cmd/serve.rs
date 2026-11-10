@@ -2645,7 +2645,7 @@ async fn after_submit(
         link.host
     ));
     match follow {
-        Some(out) => follow_job(ctx, link, net, id, &out, None).await,
+        Some(out) => follow_job(ctx, link, net, id, &out, None, true).await,
         None => Ok(ExitCode::SUCCESS),
     }
 }
@@ -2661,6 +2661,7 @@ pub(crate) async fn follow_job(
     id: u64,
     out: &Path,
     slow_hint: Option<&str>,
+    announce: bool,
 ) -> anyhow::Result<ExitCode> {
     let bar = ctx.ui.bar(0, "tasks");
     let stop = crate::ctrl_c();
@@ -2728,11 +2729,13 @@ pub(crate) async fn follow_job(
             "failed": failed,
         }),
     );
-    ctx.ui.say(&format!(
-        "done: {} files in {}",
-        report.files.len(),
-        out.display()
-    ));
+    if announce {
+        ctx.ui.say(&format!(
+            "done: {} files in {}",
+            report.files.len(),
+            out.display()
+        ));
+    }
     if failed > 0 {
         return Err(fail(
             exit::ERROR,

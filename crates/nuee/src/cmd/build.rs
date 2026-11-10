@@ -111,6 +111,7 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
     let job = GroupJob {
         manifest,
         dir: work.path().to_path_buf(),
+        announce: false,
     };
     super::group::run_jobs(&args.on, ctx, vec![job]).await?;
 

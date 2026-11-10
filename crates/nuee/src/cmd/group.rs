@@ -580,6 +580,8 @@ async fn rm(link: &str, name: &str, ctx: &Ctx) -> anyhow::Result<ExitCode> {
 pub(crate) struct GroupJob {
     pub manifest: Manifest,
     pub dir: PathBuf,
+    /// Say where the results went: not when `dir` is a working folder the caller unpacks.
+    pub announce: bool,
 }
 
 /// Runs `jobs` on the group until each one has brought its results back. When the coordinator
@@ -645,7 +647,9 @@ async fn one_session(link_text: &str, ctx: &Ctx, jobs: &mut Vec<GroupJob>) -> an
             )
         });
         for id in ids {
-            serve::follow_job(ctx, &leader, &net, id, &jobs[0].dir, hint.as_deref()).await?;
+            let job = &jobs[0];
+            serve::follow_job(ctx, &leader, &net, id, &job.dir, hint.as_deref(), job.announce)
+                .await?;
             jobs.remove(0);
         }
         Ok(())

@@ -209,6 +209,7 @@ pub async fn run(args: Args, ctx: &Ctx) -> anyhow::Result<ExitCode> {
         .map(|manifest| GroupJob {
             dir: out.join(manifest.name.as_str()),
             manifest,
+            announce: true,
         })
         .collect::<Vec<_>>();
     let names: Vec<String> = jobs

@@ -459,10 +459,12 @@ pub fn command() -> clap::Command {
 
 /// The log filter for a `-v` count when `NUEE_LOG` is unset. At the default verbosity the DNS
 /// resolver's warnings about unparsable system nameservers (link-local addresses on macOS) are
-/// hidden: they are harmless and read as errors.
+/// hidden, and so are incoming connections an endpoint ignores because their handshake failed
+/// (a peer that dialled another key at this address, common with several endpoints on one
+/// machine): both are harmless and read as errors. `-v` shows them.
 fn default_log_filter(verbose: u8) -> &'static str {
     match verbose {
-        0 => "warn,n0_dns_resolver=error",
+        0 => "warn,n0_dns_resolver=error,iroh::protocol=error",
         1 => "info,nuee=debug",
         2 => "debug",
         _ => "trace",

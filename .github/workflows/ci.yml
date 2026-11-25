@@ -82,7 +82,7 @@ jobs:
         with:
           tool: wasm-bindgen@0.2.128,wasm-pack@0.15.0,cargo-deny@0.20.2,cargo-audit@0.22.2,cargo-fuzz@0.13.2,shellcheck@0.11.0
       # install-action has no actionlint manifest at this pin; the Go module proxy checksums it.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         if: matrix.stage == 'static'
         with:
           go-version: stable
